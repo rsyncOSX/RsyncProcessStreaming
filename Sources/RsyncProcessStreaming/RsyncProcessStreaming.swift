@@ -1,44 +1,5 @@
 import Foundation
-
-public struct ProcessHandlers {
-    public let processTermination: ([String]?, Int?) -> Void
-    public let fileHandler: (Int) -> Void
-    public let rsyncPath: String?
-    public let checkLineForError: (String) throws -> Void
-    public let updateProcess: (Process?) -> Void
-    public let propagateError: (Error) -> Void
-    public let logger: (@Sendable (String, [String]) async -> Void)?
-    public let checkForErrorInRsyncOutput: Bool
-    public let rsyncVersion3: Bool
-    public let environment: [String: String]?
-    public let printLine: ((String) -> Void)?
-
-    public init(
-        processTermination: @escaping ([String]?, Int?) -> Void,
-        fileHandler: @escaping (Int) -> Void,
-        rsyncPath: String?,
-        checkLineForError: @escaping (String) throws -> Void,
-        updateProcess: @escaping (Process?) -> Void,
-        propagateError: @escaping (Error) -> Void,
-        logger: (@Sendable (String, [String]) async -> Void)? = nil,
-        checkForErrorInRsyncOutput: Bool,
-        rsyncVersion3: Bool,
-        environment: [String: String]? = nil,
-        printLine: ((String) -> Void)? = nil
-    ) {
-        self.processTermination = processTermination
-        self.fileHandler = fileHandler
-        self.rsyncPath = rsyncPath
-        self.checkLineForError = checkLineForError
-        self.updateProcess = updateProcess
-        self.propagateError = propagateError
-        self.logger = logger
-        self.checkForErrorInRsyncOutput = checkForErrorInRsyncOutput
-        self.rsyncVersion3 = rsyncVersion3
-        self.environment = environment
-        self.printLine = printLine
-    }
-}
+import OSLog
 
 public enum RsyncProcessError: Error, LocalizedError {
     case executableNotFound(String)
@@ -133,7 +94,6 @@ public final class RsyncProcess {
         handlers.updateProcess(process)
 
         let accumulator = StreamAccumulator()
-        let commandString = ([executablePath] + arguments).joined(separator: " ")
 
         let deliverLine: (String) -> Void = { line in
             Task { @MainActor in
@@ -193,7 +153,7 @@ public final class RsyncProcess {
                 let output = await accumulator.snapshot()
                 let errors = await accumulator.errorSnapshot()
 
-                await self?.handlers.logger?(commandString, output)
+                // await self?.handlers.logger?(commandString, output)
 
                 if task.terminationStatus != 0, self?.handlers.checkForErrorInRsyncOutput == true {
                     self?.handlers.propagateError(RsyncProcessError.processFailed(exitCode: task.terminationStatus, errors: errors))
@@ -207,5 +167,14 @@ public final class RsyncProcess {
         }
 
         try process.run()
+        
+        if let path = process.executableURL, let arguments = process.arguments {
+            Logger.process.debugmessageonly("RsyncProcessStreaming: COMMAND - \(path)")
+            Logger.process.debugmessageonly("RsyncProcessStreaming: ARGUMENTS - \(arguments.joined(separator: "\n"))")
+        }
+    }
+    
+    deinit {
+        Logger.process.debugmessageonly("RsyncProcessStreaming: DEINIT")
     }
 }
