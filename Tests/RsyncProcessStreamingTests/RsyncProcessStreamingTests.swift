@@ -1,5 +1,5 @@
-import XCTest
 @testable import RsyncProcessStreaming
+import XCTest
 
 final class RsyncProcessStreamingTests: XCTestCase {
     func testAccumulatorSplitsLines() async {

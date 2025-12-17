@@ -59,7 +59,7 @@ public extension ProcessHandlers {
         checkForErrorInRsyncOutput: Bool,
         rsyncVersion3: Bool,
         environment: [String: String]? = nil,
-        printLine: ((String) -> Void)? = nil
+        printLine _: ((String) -> Void)? = nil
     ) -> ProcessHandlers {
         ProcessHandlers(
             processTermination: processTermination,

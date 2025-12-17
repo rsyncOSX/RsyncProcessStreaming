@@ -1,3 +1,5 @@
+// swiftlint:disable cyclomatic_complexity
+
 import Foundation
 import OSLog
 
@@ -156,7 +158,8 @@ public final class RsyncProcess {
                 // await self?.handlers.logger?(commandString, output)
 
                 if task.terminationStatus != 0, self?.handlers.checkForErrorInRsyncOutput == true {
-                    self?.handlers.propagateError(RsyncProcessError.processFailed(exitCode: task.terminationStatus, errors: errors))
+                    self?.handlers.propagateError(RsyncProcessError.processFailed(exitCode: task.terminationStatus,
+                                                                                  errors: errors))
                 }
 
                 Task { @MainActor in
@@ -167,14 +170,16 @@ public final class RsyncProcess {
         }
 
         try process.run()
-        
+
         if let path = process.executableURL, let arguments = process.arguments {
             Logger.process.debugmessageonly("RsyncProcessStreaming: COMMAND - \(path)")
             Logger.process.debugmessageonly("RsyncProcessStreaming: ARGUMENTS - \(arguments.joined(separator: "\n"))")
         }
     }
-    
+
     deinit {
         Logger.process.debugmessageonly("RsyncProcessStreaming: DEINIT")
     }
 }
+
+// swiftlint:enable cyclomatic_complexity

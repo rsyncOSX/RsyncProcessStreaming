@@ -1,0 +1,3 @@
+# Paths to exclude from linting
+excluded:
+  - .build

@@ -4,13 +4,13 @@ import PackageDescription
 let package = Package(
     name: "RsyncProcessStreaming",
     platforms: [
-        .macOS(.v14)
+        .macOS(.v14),
     ],
     products: [
         .library(
             name: "RsyncProcessStreaming",
             targets: ["RsyncProcessStreaming"]
-        )
+        ),
     ],
     targets: [
         .target(
@@ -19,6 +19,6 @@ let package = Package(
         .testTarget(
             name: "RsyncProcessStreamingTests",
             dependencies: ["RsyncProcessStreaming"]
-        )
+        ),
     ]
 )
