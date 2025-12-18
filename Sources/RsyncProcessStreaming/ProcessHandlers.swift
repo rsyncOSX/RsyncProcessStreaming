@@ -4,6 +4,7 @@
 //
 //  Created by Thomas Evensen on 17/12/2025.
 //
+// swiftlint:disable function_parameter_count
 import Foundation
 
 public struct ProcessHandlers {
@@ -76,3 +77,4 @@ public extension ProcessHandlers {
         )
     }
 }
+// swiftlint:enable function_parameter_count

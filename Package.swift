@@ -1,4 +1,5 @@
 // swift-tools-version: 5.9
+// swiftlint:disable trailing_comma
 import PackageDescription
 
 let package = Package(
@@ -22,3 +23,4 @@ let package = Package(
         ),
     ]
 )
+// swiftlint:enable trailing_comma

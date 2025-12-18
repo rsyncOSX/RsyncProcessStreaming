@@ -1,4 +1,4 @@
-// swiftlint:disable cyclomatic_complexity
+// swiftlint:disable cyclomatic_complexity function_body_length
 
 import Foundation
 import OSLog
@@ -182,4 +182,4 @@ public final class RsyncProcess {
     }
 }
 
-// swiftlint:enable cyclomatic_complexity
+// swiftlint:enable cyclomatic_complexity function_body_length
