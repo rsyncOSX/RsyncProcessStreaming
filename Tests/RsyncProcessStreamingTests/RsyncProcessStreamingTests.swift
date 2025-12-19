@@ -119,7 +119,7 @@ struct RsyncProcessStreamingTests {
         let accumulator = StreamAccumulator()
         let lines = await accumulator.consume("")
         #expect(lines.isEmpty)
-        
+
         let snapshot = await accumulator.snapshot()
         #expect(snapshot.isEmpty)
     }
@@ -129,7 +129,7 @@ struct RsyncProcessStreamingTests {
         let accumulator = StreamAccumulator()
         let first = await accumulator.consume("partial")
         #expect(first.isEmpty)
-        
+
         let second = await accumulator.consume("complete\n")
         #expect(second == ["partialcomplete"])
     }
@@ -138,10 +138,10 @@ struct RsyncProcessStreamingTests {
     func streamAccumulatorFlushTrailing() async {
         let accumulator = StreamAccumulator()
         _ = await accumulator.consume("line1\npartial")
-        
+
         let trailing = await accumulator.flushTrailing()
         #expect(trailing == "partial")
-        
+
         let snapshot = await accumulator.snapshot()
         #expect(snapshot == ["line1", "partial"])
     }
@@ -151,7 +151,7 @@ struct RsyncProcessStreamingTests {
         let accumulator = StreamAccumulator()
         await accumulator.recordError("error1")
         await accumulator.recordError("error2")
-        
+
         let errors = await accumulator.errorSnapshot()
         #expect(errors == ["error1", "error2"])
     }
@@ -159,15 +159,15 @@ struct RsyncProcessStreamingTests {
     @Test("StreamAccumulator counts lines incrementally")
     func streamAccumulatorCountsLines() async {
         let accumulator = StreamAccumulator()
-        
+
         let count1 = await accumulator.incrementLineCounter()
         let count2 = await accumulator.incrementLineCounter()
         let count3 = await accumulator.incrementLineCounter()
-        
+
         #expect(count1 == 1)
         #expect(count2 == 2)
         #expect(count3 == 3)
-        
+
         let totalCount = await accumulator.getLineCount()
         #expect(totalCount == 3)
     }
@@ -419,7 +419,7 @@ struct RsyncProcessStreamingTests {
     func customEnvironmentPassed() async throws {
         let state = TestState()
         let customEnv = ["TEST_VAR": "test_value"]
-        
+
         let handlers = ProcessHandlers(
             processTermination: { output, id in
                 state.mockOutput = output
@@ -514,7 +514,7 @@ struct RsyncProcessStreamingTests {
 
         // Help output should have multiple lines
         #expect((state.mockOutput?.count ?? 0) > 10)
-        
+
         // Verify output contains expected content
         let outputString = state.mockOutput?.joined(separator: "\n").lowercased() ?? ""
         #expect(outputString.contains("usage") || outputString.contains("options"))
@@ -555,9 +555,9 @@ extension MockRsyncError: LocalizedError {
 }
 
 extension RsyncProcessStreamingTests {
-    
+
     // MARK: - Tests for Process Cancellation Fix
-    
+
     @Test("Process can be cancelled")
     func processCancellation() async throws {
         let state = TestState()
@@ -572,29 +572,29 @@ extension RsyncProcessStreamingTests {
         )
 
         try process.executeProcess()
-        
+
         // Cancel immediately
         process.cancel()
-        
+
         try await Task.sleep(nanoseconds: 1_000_000_000)
 
         // Should have propagated cancellation error
         #expect(state.errorPropagated != nil)
-        
+
         if let error = state.errorPropagated as? RsyncProcessError,
            case .processCancelled = error {
             // Correctly identified as cancellation
         } else {
             Issue.record("Expected processCancelled error")
         }
-        
+
         #expect(process.isCancelledState)
     }
-    
+
     @Test("Cancelled process stops processing output")
     func cancelledProcessStopsProcessing() async throws {
         let state = TestState()
-        
+
         let handlers = ProcessHandlers(
             processTermination: { output, id in
                 state.mockOutput = output
@@ -628,19 +628,19 @@ extension RsyncProcessStreamingTests {
         )
 
         try process.executeProcess()
-        
+
         // Cancel quickly to test if processing stops
         try await Task.sleep(nanoseconds: 100_000_000) // 0.1s
         process.cancel()
-        
+
         try await Task.sleep(nanoseconds: 1_000_000_000)
 
         #expect(process.isCancelledState)
         // #expect(state.errorPropagated != nil)
     }
-    
+
     // MARK: - Tests for Data Drain Fix
-    
+
     @Test("All output is captured even with fast termination")
     func allOutputCapturedFastTermination() async throws {
         let state = TestState()
@@ -660,11 +660,11 @@ extension RsyncProcessStreamingTests {
         // Should have captured output despite fast termination
         #expect(state.mockOutput != nil)
         #expect((state.mockOutput?.count ?? 0) > 0)
-        
+
         let outputString = state.mockOutput?.joined(separator: " ").lowercased() ?? ""
         #expect(outputString.contains("rsync"))
     }
-    
+
     @Test("Partial lines are flushed at termination")
     func partialLinesFlushedAtTermination() async throws {
         let state = TestState()
@@ -684,7 +684,7 @@ extension RsyncProcessStreamingTests {
         #expect(state.mockOutput != nil)
         #expect((state.mockOutput?.count ?? 0) > 0)
     }
-    
+
     @Test("Error output is captured at termination")
     func errorOutputCapturedAtTermination() async throws {
         let state = TestState()
@@ -705,20 +705,20 @@ extension RsyncProcessStreamingTests {
 
         // Should have captured error output
         #expect(state.errorPropagated != nil)
-        
+
         if let error = state.errorPropagated as? RsyncProcessError,
            case let .processFailed(_, errors) = error {
             #expect(!errors.isEmpty)
         }
     }
-    
+
     // MARK: - Tests for Error Propagation During Processing
-    
+
     @Test("Error during line processing stops further processing")
     func errorDuringProcessingStops() async throws {
         let state = TestState()
         var errorThrown = false
-        
+
         let handlers = ProcessHandlers(
             processTermination: { output, id in
                 state.mockOutput = output
@@ -728,7 +728,7 @@ extension RsyncProcessStreamingTests {
                 state.fileHandlerCount = count
             },
             rsyncPath: "/opt/homebrew/bin/rsync",
-            checkLineForError: { line in
+            checkLineForError: {  in
                 state.errorCheckCount += 1
                 // Throw error on first line
                 if state.errorCheckCount == 1 {
@@ -761,9 +761,9 @@ extension RsyncProcessStreamingTests {
         #expect(errorThrown)
         #expect(state.errorPropagated != nil)
     }
-    
+
     // MARK: - Tests for Process Cleanup in Deinit
-    
+
     @Test("Process is terminated if RsyncProcess is deallocated")
     func processTerminatedOnDeinit() async throws {
         let state = TestState()
@@ -777,23 +777,23 @@ extension RsyncProcessStreamingTests {
         )
 
         try process?.executeProcess()
-        
+
         // Give it a moment to start
         try await Task.sleep(nanoseconds: 100_000_000)
-        
+
         // Deallocate the process object
         process = nil
-        
+
         // Give deinit time to run
         try await Task.sleep(nanoseconds: 500_000_000)
-        
+
         // Process should have been cleaned up
         // We can't directly verify process termination, but no crashes = success
         #expect(process == nil)
     }
-    
+
     // MARK: - Tests for Race Condition Fix
-    
+
     @Test("File handler count increments atomically with line processing")
     func fileHandlerCountAtomic() async throws {
         let state = TestState()
@@ -813,14 +813,14 @@ extension RsyncProcessStreamingTests {
         let count = state.fileHandlerCount
         #expect(count > 0)
         #expect(count < 10000) // Sanity check
-        
+
         // If count matches or is close to output lines, atomicity is working
         let outputLineCount = state.mockOutput?.count ?? 0
         #expect(count == outputLineCount)
     }
-    
+
     // MARK: - Tests for Thread Safety
-    
+
     @Test("Multiple concurrent operations don't cause crashes")
     func concurrentOperationsSafe() async throws {
         let state = TestState()
@@ -834,7 +834,7 @@ extension RsyncProcessStreamingTests {
         )
 
         try process.executeProcess()
-        
+
         // Try to trigger concurrent access
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
@@ -843,21 +843,21 @@ extension RsyncProcessStreamingTests {
                     try? await Task.sleep(nanoseconds: 10_000_000)
                 }
             }
-            
+
             group.addTask {
                 try? await Task.sleep(nanoseconds: 100_000_000)
                 process.cancel()
             }
         }
-        
+
         try await Task.sleep(nanoseconds: 1_000_000_000)
-        
+
         // Should complete without crashes
         #expect(true)
     }
-    
+
     // MARK: - Tests for Process Reference Management
-    
+
     @Test("Process reference is properly managed")
     func processReferenceManaged() async throws {
         let state = TestState()
@@ -872,25 +872,25 @@ extension RsyncProcessStreamingTests {
 
         // Process reference should be nil before execution
         #expect(!process.isCancelledState)
-        
+
         try process.executeProcess()
-        
+
         // Brief wait for execution
         try await Task.sleep(nanoseconds: 100_000_000)
-        
+
         // Should be able to check state without crashes
         _ = process.isCancelledState
-        
+
         try await Task.sleep(nanoseconds: 2_000_000_000)
-        
+
         // After completion, should still be safe to check
         _ = process.isCancelledState
-        
+
         #expect(state.mockOutput != nil)
     }
-    
+
     // MARK: - Integration Tests for All Fixes
-    
+
     @Test("Complete workflow with all fixes working together")
     func completeWorkflowIntegration() async throws {
         let state = TestState()
@@ -916,7 +916,7 @@ extension RsyncProcessStreamingTests {
         #expect(state.mockHiddenID == 42)
         #expect(state.fileHandlerCount > 0)
         #expect(state.processUpdateCalled)
-        
+
         // Should have no errors for valid --help command
         if state.errorPropagated != nil {
             // Only acceptable error is if rsync path doesn't exist
@@ -925,7 +925,7 @@ extension RsyncProcessStreamingTests {
                 // This is fine
             }
         }
-        
+
         let outputString = state.mockOutput?.joined(separator: " ").lowercased() ?? ""
         #expect(outputString.contains("rsync") || outputString.contains("usage"))
     }

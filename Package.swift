@@ -26,4 +26,3 @@ let package = Package(
     ]
 )
 // swiftlint:enable trailing_comma
-

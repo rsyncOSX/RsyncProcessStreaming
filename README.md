@@ -42,3 +42,13 @@ try process.executeProcess()
 
 ## Testing
 A small actor-level test is included in `RsyncProcessStreamingTests` validating the streaming splitter.
+
+## Code Quality
+This package prioritizes production-readiness with:
+- **Thread-safe design** using `@unchecked Sendable` with explicit `NSLock` synchronization for safe multi-threaded access
+- **Actor-based concurrency** with `StreamAccumulator` for isolated state management
+- **Robust error handling** including proper error propagation and process cleanup
+- **Resource management** with guaranteed process termination in deinit
+- **Defensive programming** with multiple guard checks to prevent race conditions and partial state processing
+
+The implementation balances flexibility (off-thread execution) with safety (explicit synchronization and main-thread callbacks), making it suitable for production use in tools requiring responsive rsync streaming.
