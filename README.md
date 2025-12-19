@@ -27,8 +27,7 @@ let handlers = ProcessHandlers(
     propagateError: { error in print("Error: \(error)") },
     checkForErrorInRsyncOutput: true,
     rsyncVersion3: true,
-    environment: nil,
-    printLine: { line in print("line: \(line)") }
+    environment: nil
 )
 
 let process = RsyncProcess(arguments: ["--version"], handlers: handlers, useFileHandler: false)
