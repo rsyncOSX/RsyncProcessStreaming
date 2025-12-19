@@ -9,11 +9,11 @@ import OSLog
 
 extension Logger {
     nonisolated static let process = Logger(
-        subsystem: Bundle.main.bundleIdentifier ?? "unknown",
+        subsystem: Bundle.main.bundleIdentifier ?? "com.rsyncprocessstreaming",
         category: "process"
     )
 
-    nonisolated func debugmessageonly(_ message: String) {
+    nonisolated func debugMessageOnly(_ message: String) {
         #if DEBUG
             debug("\(message)")
         #endif

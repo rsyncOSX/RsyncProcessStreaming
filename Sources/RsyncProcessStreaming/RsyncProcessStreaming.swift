@@ -55,8 +55,8 @@ public final class RsyncProcess {
     private let handlers: ProcessHandlers
     private let useFileHandler: Bool
     private var lineCounter: Int = 0
-    // Privat property to mark if real-time output is enabled or not
     private var isRealtimeOutputEnabled: Bool = false
+    private let accumulator = StreamAccumulator()
 
     public init(
         arguments: [String],
@@ -97,15 +97,14 @@ public final class RsyncProcess {
 
         handlers.updateProcess(process)
 
-        let accumulator = StreamAccumulator()
-
         let deliverLine: (String) -> Void = { line in
             Task { @MainActor in
                 self.handlers.printLine?(line)
             }
         }
         
-        Task {
+        // Check real-time output status synchronously to avoid race conditions
+        Task { @MainActor in
             isRealtimeOutputEnabled = await RsyncOutputCapture.shared.isCapturing()
         }
         
@@ -115,7 +114,7 @@ public final class RsyncProcess {
             guard let text = String(data: data, encoding: .utf8), text.isEmpty == false else { return }
 
             Task.detached { [useFileHandler = self.useFileHandler] in
-                let lines = await accumulator.consume(text)
+                let lines = await self.accumulator.consume(text)
                 guard lines.isEmpty == false else { return }
 
                 for line in lines {
@@ -147,7 +146,7 @@ public final class RsyncProcess {
             guard let text = String(data: data, encoding: .utf8), text.isEmpty == false else { return }
 
             Task.detached {
-                await accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                await self.accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
 
@@ -157,17 +156,18 @@ public final class RsyncProcess {
 
             Task.detached {
                 if self?.isRealtimeOutputEnabled ?? false {
-                    if let trailing = await accumulator.flushTrailing() {
+                    if let trailing = await self?.accumulator.flushTrailing() {
                         deliverLine(trailing)
                     }
                 }
                 
-                let output = await accumulator.snapshot()
-                let errors = await accumulator.errorSnapshot()
+                let output = await self?.accumulator.snapshot()
+                let errors = await self?.accumulator.errorSnapshot()
 
                 // await self?.handlers.logger?(commandString, output)
 
                 if task.terminationStatus != 0, self?.handlers.checkForErrorInRsyncOutput == true {
+                    guard let errors else { return }
                     self?.handlers.propagateError(RsyncProcessError.processFailed(exitCode: task.terminationStatus,
                                                                                   errors: errors))
                 }
@@ -182,13 +182,13 @@ public final class RsyncProcess {
         try process.run()
 
         if let path = process.executableURL, let arguments = process.arguments {
-            Logger.process.debugmessageonly("RsyncProcessStreaming: COMMAND - \(path)")
-            Logger.process.debugmessageonly("RsyncProcessStreaming: ARGUMENTS - \(arguments.joined(separator: "\n"))")
+            Logger.process.debugMessageOnly("RsyncProcessStreaming: COMMAND - \(path)")
+            Logger.process.debugMessageOnly("RsyncProcessStreaming: ARGUMENTS - \(arguments.joined(separator: "\n"))")
         }
     }
 
     deinit {
-        Logger.process.debugmessageonly("RsyncProcessStreaming: DEINIT")
+        Logger.process.debugMessageOnly("RsyncProcessStreaming: DEINIT")
     }
 }
 

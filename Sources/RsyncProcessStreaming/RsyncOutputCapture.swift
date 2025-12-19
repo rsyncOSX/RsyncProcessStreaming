@@ -55,7 +55,11 @@ public actor RsyncOutputCapture {
         // Write to file if configured
         if let fileHandle {
             if let data = (line + "\n").data(using: .utf8) {
-                try? fileHandle.write(contentsOf: data)
+                do {
+                    try fileHandle.write(contentsOf: data)
+                } catch {
+                    Logger.process.error("Failed to write captured line to file: \(error.localizedDescription)")
+                }
             }
         }
     }
@@ -91,7 +95,11 @@ public actor RsyncOutputCapture {
             // Write header
             let header = "\n=== Rsync Output Session: \(Date()) ===\n"
             if let data = header.data(using: .utf8) {
-                try? fileHandle?.write(contentsOf: data)
+                do {
+                    try fileHandle?.write(contentsOf: data)
+                } catch {
+                    Logger.process.error("Failed to write session header: \(error.localizedDescription)")
+                }
             }
         } catch {
             Logger.process.error("Failed to open file for writing: \(error.localizedDescription)")

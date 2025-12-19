@@ -26,7 +26,6 @@ actor ActorToFile {
 }
 
 @MainActor
-@Suite("RsyncProcessStreaming Tests")
 struct RsyncProcessStreamingTests {
     @MainActor
     final class TestState {
@@ -159,7 +158,7 @@ struct RsyncProcessStreamingTests {
                 state.mockOutput = output
                 state.mockHiddenID = id
                 terminationOutputCount = output?.count ?? 0
-                Logger.process.debugmessageonly("Termination called with \(terminationOutputCount) lines")
+                Logger.process.debugMessageOnly("Termination called with \(terminationOutputCount) lines")
             },
             fileHandler: { count in
                 dataHandledCount = count
@@ -209,7 +208,7 @@ struct RsyncProcessStreamingTests {
 
         let message = "Test complete - Data handled during execution: \(dataHandledCount), " +
             "Data at termination: \(terminationOutputCount)"
-        Logger.process.debugmessageonly(message)
+        Logger.process.debugMessageOnly(message)
     }
 
     @Test("StreamAccumulator splits lines correctly")
