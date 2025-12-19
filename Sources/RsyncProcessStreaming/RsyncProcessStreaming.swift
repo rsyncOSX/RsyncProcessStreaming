@@ -142,7 +142,6 @@ public final class RsyncProcess: @unchecked Sendable {
         process.terminationHandler = { [weak self] task in
             guard let self = self else { return }
             
-            // CRITICAL FIX: Drain any remaining data before removing handlers
             // This ensures we capture all output even if termination happens quickly
             let finalOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
             let finalErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
@@ -226,10 +225,6 @@ public final class RsyncProcess: @unchecked Sendable {
                     self.handlers.propagateError(error)
                 }
                 
-                // Optionally terminate the process when an error is detected
-                // Uncomment if you want to stop processing on first error:
-                // self.cancel()
-                
                 break
             }
         }
@@ -238,12 +233,6 @@ public final class RsyncProcess: @unchecked Sendable {
     private func handleTermination(task: Process) async {
         let output = await accumulator.snapshot()
         let errors = await accumulator.errorSnapshot()
-
-        // Log if logger is available (commented out as per original, but now properly handled)
-        // if let logger = handlers.logger {
-        //     let commandString = task.executableURL?.path ?? "rsync"
-        //     await logger(commandString, output)
-        // }
 
         // Check if this was a cancellation
         if isCancelled {
