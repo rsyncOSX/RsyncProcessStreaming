@@ -6,6 +6,7 @@ import OSLog
 public enum RsyncProcessError: Error, LocalizedError {
     case executableNotFound(String)
     case processFailed(exitCode: Int32, errors: [String])
+    case processCancelled
 
     public var errorDescription: String? {
         switch self {
@@ -14,6 +15,8 @@ public enum RsyncProcessError: Error, LocalizedError {
         case let .processFailed(code, errors):
             let message = errors.joined(separator: "\n")
             return "rsync exited with code \(code).\n\(message)"
+        case .processCancelled:
+            return "Process was cancelled"
         }
     }
 }
@@ -63,6 +66,10 @@ public final class RsyncProcess: @unchecked Sendable {
     private let handlers: ProcessHandlers
     private let useFileHandler: Bool
     private let accumulator = StreamAccumulator()
+    private var currentProcess: Process?
+    private let processLock = NSLock()
+    private var isCancelled = false
+    private var hasErrorOccurred = false
 
     public init(
         arguments: [String],
@@ -101,6 +108,11 @@ public final class RsyncProcess: @unchecked Sendable {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
+        // Store process reference before starting
+        processLock.lock()
+        currentProcess = process
+        processLock.unlock()
+
         handlers.updateProcess(process)
         
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
@@ -130,10 +142,29 @@ public final class RsyncProcess: @unchecked Sendable {
         process.terminationHandler = { [weak self] task in
             guard let self = self else { return }
             
+            // CRITICAL FIX: Drain any remaining data before removing handlers
+            // This ensures we capture all output even if termination happens quickly
+            let finalOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+            let finalErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+            
+            // Now safe to remove handlers
             outputPipe.fileHandleForReading.readabilityHandler = nil
             errorPipe.fileHandleForReading.readabilityHandler = nil
 
             Task {
+                // Process any final output data that was still in the pipe
+                if let text = String(data: finalOutputData, encoding: .utf8), !text.isEmpty {
+                    await self.handleOutputData(text)
+                }
+                
+                // Flush any remaining partial line
+                _ = await self.accumulator.flushTrailing()
+                
+                // Process any final error data
+                if let errorText = String(data: finalErrorData, encoding: .utf8), !errorText.isEmpty {
+                    await self.accumulator.recordError(errorText.trimmingCharacters(in: .whitespacesAndNewlines))
+                }
+                
                 await self.handleTermination(task: task)
             }
         }
@@ -146,11 +177,37 @@ public final class RsyncProcess: @unchecked Sendable {
         }
     }
     
+    /// Cancels the running process
+    public func cancel() {
+        processLock.lock()
+        isCancelled = true
+        let process = currentProcess
+        processLock.unlock()
+        
+        process?.terminate()
+        
+        Logger.process.debugMessageOnly("RsyncProcessStreaming: Process cancelled")
+    }
+    
+    /// Returns whether the process has been cancelled
+    public var isCancelledState: Bool {
+        processLock.lock()
+        defer { processLock.unlock() }
+        return isCancelled
+    }
+    
     private func handleOutputData(_ text: String) async {
+        // Check if we've been cancelled or if an error has occurred
+        guard !isCancelled, !hasErrorOccurred else { return }
+        
         let lines = await accumulator.consume(text)
         guard !lines.isEmpty else { return }
 
         for line in lines {
+            // Check again in loop in case error occurs during processing
+            guard !isCancelled, !hasErrorOccurred else { break }
+            
+            // Handle file counting - do this atomically with the line processing
             if useFileHandler {
                 let count = await accumulator.incrementLineCounter()
                 await MainActor.run {
@@ -158,12 +215,22 @@ public final class RsyncProcess: @unchecked Sendable {
                 }
             }
 
+            // Check line for errors
             do {
                 try handlers.checkLineForError(line)
             } catch {
+                // Mark that an error has occurred to prevent further processing
+                hasErrorOccurred = true
+                
                 await MainActor.run {
                     self.handlers.propagateError(error)
                 }
+                
+                // Optionally terminate the process when an error is detected
+                // Uncomment if you want to stop processing on first error:
+                // self.cancel()
+                
+                break
             }
         }
     }
@@ -172,9 +239,23 @@ public final class RsyncProcess: @unchecked Sendable {
         let output = await accumulator.snapshot()
         let errors = await accumulator.errorSnapshot()
 
-        // Log the command and output if logger is available
-        // await handlers.logger?(commandString, output)
+        // Log if logger is available (commented out as per original, but now properly handled)
+        // if let logger = handlers.logger {
+        //     let commandString = task.executableURL?.path ?? "rsync"
+        //     await logger(commandString, output)
+        // }
 
+        // Check if this was a cancellation
+        if isCancelled {
+            await MainActor.run {
+                self.handlers.propagateError(RsyncProcessError.processCancelled)
+                self.handlers.processTermination(output, self.hiddenID)
+                self.handlers.updateProcess(nil)
+            }
+            return
+        }
+
+        // Check for process failure
         if task.terminationStatus != 0, handlers.checkForErrorInRsyncOutput == true {
             let error = RsyncProcessError.processFailed(
                 exitCode: task.terminationStatus,
@@ -189,9 +270,24 @@ public final class RsyncProcess: @unchecked Sendable {
             self.handlers.processTermination(output, self.hiddenID)
             self.handlers.updateProcess(nil)
         }
+        
+        // Clean up process reference
+        processLock.withLock {
+            currentProcess = nil
+        }
     }
 
     deinit {
+        // Ensure process is terminated if RsyncProcess is deallocated
+        processLock.lock()
+        let process = currentProcess
+        processLock.unlock()
+        
+        if let process = process, process.isRunning {
+            process.terminate()
+            Logger.process.debugMessageOnly("RsyncProcessStreaming: Process terminated in deinit")
+        }
+        
         Logger.process.debugMessageOnly("RsyncProcessStreaming: DEINIT")
     }
 }
