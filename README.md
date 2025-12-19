@@ -37,7 +37,7 @@ try process.executeProcess()
 ## Integration Notes
 - Module name: `RsyncProcessStreaming`. If migrating from `RsyncProcess`, swap the import and reuse existing handler builders.
 - `executeProcess()` now delivers stdout incrementally and only keeps the accumulated lines needed for completion.
-- For UI-bound callbacks, `printLine`, `fileHandler`, and `processTermination` are dispatched on the main actor.
+- For UI-bound callbacks, `fileHandler` and `processTermination` are dispatched on the main actor.
 
 ## Testing
 A small actor-level test is included in `RsyncProcessStreamingTests` validating the streaming splitter.
