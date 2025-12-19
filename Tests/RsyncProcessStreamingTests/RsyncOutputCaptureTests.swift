@@ -193,7 +193,7 @@ struct RsyncOutputCaptureTests {
             let handlers = ProcessHandlers(
                 processTermination: { _, _ in },
                 fileHandler: { _ in },
-                rsyncPath:  "/usr/bin/rsync",
+                rsyncPath: "/usr/bin/rsync",
                 checkLineForError: { _ in },
                 updateProcess: { _ in },
                 propagateError: { _ in },

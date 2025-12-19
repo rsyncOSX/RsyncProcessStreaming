@@ -13,13 +13,19 @@ let package = Package(
             targets: ["RsyncProcessStreaming"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-testing.git", from: "0.4.0"),
+    ],
     targets: [
         .target(
             name: "RsyncProcessStreaming"
         ),
         .testTarget(
             name: "RsyncProcessStreamingTests",
-            dependencies: ["RsyncProcessStreaming"]
+            dependencies: [
+                "RsyncProcessStreaming",
+                .product(name: "Testing", package: "swift-testing"),
+            ]
         ),
     ]
 )

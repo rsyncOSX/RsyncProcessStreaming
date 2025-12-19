@@ -156,7 +156,7 @@ public final class RsyncProcess {
             errorPipe.fileHandleForReading.readabilityHandler = nil
 
             Task.detached {
-                if (self?.isRealtimeOutputEnabled ?? false) {
+                if self?.isRealtimeOutputEnabled ?? false {
                     if let trailing = await accumulator.flushTrailing() {
                         deliverLine(trailing)
                     }
