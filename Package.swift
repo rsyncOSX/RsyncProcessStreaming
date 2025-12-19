@@ -1,4 +1,5 @@
-// swift-tools-version: 5.9
+// swift-tools-version: 6.2
+// The swift-tools-version declares the minimum version of Swift required to build this package.
 // swiftlint:disable trailing_comma
 import PackageDescription
 
@@ -13,19 +14,14 @@ let package = Package(
             targets: ["RsyncProcessStreaming"]
         ),
     ],
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-testing", from: "0.10.0"),
-    ],
     targets: [
         .target(
-            name: "RsyncProcessStreaming"
+            name: "RsyncProcessStreaming",
+            dependencies: []
         ),
         .testTarget(
             name: "RsyncProcessStreamingTests",
-            dependencies: [
-                "RsyncProcessStreaming",
-                .product(name: "Testing", package: "swift-testing"),
-            ]
+            dependencies: ["RsyncProcessStreaming"]
         ),
     ]
 )

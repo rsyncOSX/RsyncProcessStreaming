@@ -18,7 +18,6 @@ public struct ProcessHandlers {
     public let checkForErrorInRsyncOutput: Bool
     public let rsyncVersion3: Bool
     public let environment: [String: String]?
-    public let printLine: ((String) -> Void)?
 
     public init(
         processTermination: @escaping ([String]?, Int?) -> Void,
@@ -30,8 +29,7 @@ public struct ProcessHandlers {
         logger: (@Sendable (String, [String]) async -> Void)? = nil,
         checkForErrorInRsyncOutput: Bool,
         rsyncVersion3: Bool,
-        environment: [String: String]? = nil,
-        printLine: ((String) -> Void)? = nil
+        environment: [String: String]? = nil
     ) {
         self.processTermination = processTermination
         self.fileHandler = fileHandler
@@ -43,7 +41,6 @@ public struct ProcessHandlers {
         self.checkForErrorInRsyncOutput = checkForErrorInRsyncOutput
         self.rsyncVersion3 = rsyncVersion3
         self.environment = environment
-        self.printLine = printLine
     }
 }
 
@@ -59,8 +56,7 @@ public extension ProcessHandlers {
         logger: (@Sendable (String, [String]) async -> Void)? = nil,
         checkForErrorInRsyncOutput: Bool,
         rsyncVersion3: Bool,
-        environment: [String: String]? = nil,
-        printLine: ((String) -> Void)? = nil
+        environment: [String: String]? = nil
     ) -> ProcessHandlers {
         ProcessHandlers(
             processTermination: processTermination,
@@ -73,7 +69,6 @@ public extension ProcessHandlers {
             checkForErrorInRsyncOutput: checkForErrorInRsyncOutput,
             rsyncVersion3: rsyncVersion3,
             environment: environment,
-            printLine: RsyncOutputCapture.shared.makePrintLinesClosure()
         )
     }
 }

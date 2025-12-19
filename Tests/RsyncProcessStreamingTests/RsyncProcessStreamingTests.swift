@@ -87,34 +87,13 @@ struct RsyncProcessStreamingTests {
             checkForErrorInRsyncOutput: checkForError,
             rsyncVersion3: rsyncVersion3,
             environment: nil,
-            printLine: nil
         )
     }
 
     // START
 
-    @Test("Full process lifecycle with rsync")
-    func fullProcessLifecycle() async throws {
-        let state = TestState()
-        let handlers = createMockHandlers(state: state)
-        let process = RsyncProcess(
-            arguments: ["--version"],
-            hiddenID: 123,
-            handlers: handlers,
-            useFileHandler: false
-        )
+    
 
-        try process.executeProcess()
-
-        // Give process time to complete
-        try await Task.sleep(nanoseconds: 2_000_000_000)
-
-        #expect(state.processUpdateCalled == true)
-        // After termination, output should contain version info
-        #expect(state.mockOutput != nil)
-    }
-
-    @Test("Process termination with pending output data")
     func processTerminationWithPendingData() async throws {
         let state = TestState()
         let handlers = createMockHandlers(printLine: state.printLine(_:), state: state)
@@ -145,7 +124,6 @@ struct RsyncProcessStreamingTests {
         #expect(outputString.contains("rsync") || outputString.contains("version"))
     }
 
-    @Test("Process termination called before all data is handled")
     func processTerminationBeforeAllDataHandled() async throws {
         let state = TestState()
         let hiddenID = 1

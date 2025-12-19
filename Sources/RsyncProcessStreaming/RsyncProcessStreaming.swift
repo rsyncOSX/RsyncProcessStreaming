@@ -22,6 +22,7 @@ actor StreamAccumulator {
     private var lines: [String] = []
     private var partialLine: String = ""
     private var errorLines: [String] = []
+    private var lineCounter: Int = 0
 
     func consume(_ text: String) -> [String] {
         let combined = partialLine + text
@@ -47,15 +48,20 @@ actor StreamAccumulator {
     }
 
     func errorSnapshot() -> [String] { errorLines }
+    
+    func incrementLineCounter() -> Int {
+        lineCounter += 1
+        return lineCounter
+    }
+    
+    func getLineCount() -> Int { lineCounter }
 }
 
-public final class RsyncProcess {
+public final class RsyncProcess: @unchecked Sendable {
     private let arguments: [String]
     private let hiddenID: Int?
     private let handlers: ProcessHandlers
     private let useFileHandler: Bool
-    private var lineCounter: Int = 0
-    private var isRealtimeOutputEnabled: Bool = false
     private let accumulator = StreamAccumulator()
 
     public init(
@@ -96,86 +102,39 @@ public final class RsyncProcess {
         process.standardError = errorPipe
 
         handlers.updateProcess(process)
-
-        let deliverLine: (String) -> Void = { line in
-            Task { @MainActor in
-                self.handlers.printLine?(line)
-            }
-        }
         
-        // Check real-time output status synchronously to avoid race conditions
-        Task { @MainActor in
-            isRealtimeOutputEnabled = await RsyncOutputCapture.shared.isCapturing()
-        }
-        
-        outputPipe.fileHandleForReading.readabilityHandler = { handle in
+        outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            guard let self = self else { return }
+            
             let data = handle.availableData
             guard data.count > 0 else { return }
-            guard let text = String(data: data, encoding: .utf8), text.isEmpty == false else { return }
+            guard let text = String(data: data, encoding: .utf8), !text.isEmpty else { return }
 
-            Task.detached { [useFileHandler = self.useFileHandler] in
-                let lines = await self.accumulator.consume(text)
-                guard lines.isEmpty == false else { return }
-
-                for line in lines {
-                    if useFileHandler {
-                        self.lineCounter += 1
-                        Task { @MainActor in
-                            self.handlers.fileHandler(self.lineCounter)
-                        }
-                    }
-
-                    do {
-                        try self.handlers.checkLineForError(line)
-                    } catch {
-                        Task { @MainActor in
-                            self.handlers.propagateError(error)
-                        }
-                    }
-
-                    if self.isRealtimeOutputEnabled {
-                        deliverLine(line)
-                    }
-                }
+            Task {
+                await self.handleOutputData(text)
             }
         }
 
-        errorPipe.fileHandleForReading.readabilityHandler = { handle in
+        errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
+            guard let self = self else { return }
+            
             let data = handle.availableData
             guard data.count > 0 else { return }
-            guard let text = String(data: data, encoding: .utf8), text.isEmpty == false else { return }
+            guard let text = String(data: data, encoding: .utf8), !text.isEmpty else { return }
 
-            Task.detached {
+            Task {
                 await self.accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
 
         process.terminationHandler = { [weak self] task in
+            guard let self = self else { return }
+            
             outputPipe.fileHandleForReading.readabilityHandler = nil
             errorPipe.fileHandleForReading.readabilityHandler = nil
 
-            Task.detached {
-                if self?.isRealtimeOutputEnabled ?? false {
-                    if let trailing = await self?.accumulator.flushTrailing() {
-                        deliverLine(trailing)
-                    }
-                }
-                
-                let output = await self?.accumulator.snapshot()
-                let errors = await self?.accumulator.errorSnapshot()
-
-                // await self?.handlers.logger?(commandString, output)
-
-                if task.terminationStatus != 0, self?.handlers.checkForErrorInRsyncOutput == true {
-                    guard let errors else { return }
-                    self?.handlers.propagateError(RsyncProcessError.processFailed(exitCode: task.terminationStatus,
-                                                                                  errors: errors))
-                }
-
-                Task { @MainActor in
-                    self?.handlers.processTermination(output, self?.hiddenID)
-                    self?.handlers.updateProcess(nil)
-                }
+            Task {
+                await self.handleTermination(task: task)
             }
         }
 
@@ -184,6 +143,51 @@ public final class RsyncProcess {
         if let path = process.executableURL, let arguments = process.arguments {
             Logger.process.debugMessageOnly("RsyncProcessStreaming: COMMAND - \(path)")
             Logger.process.debugMessageOnly("RsyncProcessStreaming: ARGUMENTS - \(arguments.joined(separator: "\n"))")
+        }
+    }
+    
+    private func handleOutputData(_ text: String) async {
+        let lines = await accumulator.consume(text)
+        guard !lines.isEmpty else { return }
+
+        for line in lines {
+            if useFileHandler {
+                let count = await accumulator.incrementLineCounter()
+                await MainActor.run {
+                    self.handlers.fileHandler(count)
+                }
+            }
+
+            do {
+                try handlers.checkLineForError(line)
+            } catch {
+                await MainActor.run {
+                    self.handlers.propagateError(error)
+                }
+            }
+        }
+    }
+    
+    private func handleTermination(task: Process) async {
+        let output = await accumulator.snapshot()
+        let errors = await accumulator.errorSnapshot()
+
+        // Log the command and output if logger is available
+        // await handlers.logger?(commandString, output)
+
+        if task.terminationStatus != 0, handlers.checkForErrorInRsyncOutput == true {
+            let error = RsyncProcessError.processFailed(
+                exitCode: task.terminationStatus,
+                errors: errors
+            )
+            await MainActor.run {
+                self.handlers.propagateError(error)
+            }
+        }
+
+        await MainActor.run {
+            self.handlers.processTermination(output, self.hiddenID)
+            self.handlers.updateProcess(nil)
         }
     }
 
