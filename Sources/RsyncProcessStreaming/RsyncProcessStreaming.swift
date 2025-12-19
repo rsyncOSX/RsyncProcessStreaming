@@ -55,6 +55,8 @@ public final class RsyncProcess {
     private let handlers: ProcessHandlers
     private let useFileHandler: Bool
     private var lineCounter: Int = 0
+    // Privat property to mark if real-time output is enabled or not
+    private var isRealtimeOutputEnabled: Bool = false
 
     public init(
         arguments: [String],
@@ -102,7 +104,11 @@ public final class RsyncProcess {
                 self.handlers.printLine?(line)
             }
         }
-
+        
+        Task {
+            isRealtimeOutputEnabled = await RsyncOutputCapture.shared.isCapturing()
+        }
+        
         outputPipe.fileHandleForReading.readabilityHandler = { handle in
             let data = handle.availableData
             guard data.count > 0 else { return }
@@ -128,7 +134,9 @@ public final class RsyncProcess {
                         }
                     }
 
-                    deliverLine(line)
+                    if self.isRealtimeOutputEnabled {
+                        deliverLine(line)
+                    }
                 }
             }
         }
@@ -148,10 +156,12 @@ public final class RsyncProcess {
             errorPipe.fileHandleForReading.readabilityHandler = nil
 
             Task.detached {
-                if let trailing = await accumulator.flushTrailing() {
-                    deliverLine(trailing)
+                if (self?.isRealtimeOutputEnabled ?? false) {
+                    if let trailing = await accumulator.flushTrailing() {
+                        deliverLine(trailing)
+                    }
                 }
-
+                
                 let output = await accumulator.snapshot()
                 let errors = await accumulator.errorSnapshot()
 
