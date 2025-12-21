@@ -1,0 +1,21 @@
+[
+  {
+    "key": "cmd+shift+t",
+    "command": "workbench.action.tasks.runTask",
+    "args": "xcrun: swift test",
+    "when": "editorTextFocus"
+  }
+  {
+    "key": "cmd+shift+b",
+    "command": "workbench.action.tasks.runTask",
+    "args": "xcrun: swift build",
+    "when": "editorTextFocus"
+  }
+  ,
+  {
+    "key": "cmd+alt+b",
+    "command": "workbench.action.tasks.runTask",
+    "args": "swift: reset + build",
+    "when": "editorTextFocus"
+  }
+]

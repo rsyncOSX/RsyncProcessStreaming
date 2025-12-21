@@ -2,6 +2,7 @@ import Foundation
 import OSLog
 @testable import RsyncProcessStreaming
 import Testing
+// swiftlint:disable type_body_length file_length
 
 actor ActorToFile {
     private func logging(command _: String, stringoutput: [String]) async {
@@ -728,7 +729,7 @@ extension RsyncProcessStreamingTests {
                 state.fileHandlerCount = count
             },
             rsyncPath: "/opt/homebrew/bin/rsync",
-            checkLineForError: {  in
+            checkLineForError: { _ in
                 state.errorCheckCount += 1
                 // Throw error on first line
                 if state.errorCheckCount == 1 {
@@ -930,3 +931,4 @@ extension RsyncProcessStreamingTests {
         #expect(outputString.contains("rsync") || outputString.contains("usage"))
     }
 }
+// swiftlint:enable type_body_length file_length

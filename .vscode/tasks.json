@@ -1,0 +1,54 @@
+{
+	"version": "2.0.0",
+	"tasks": [
+		{
+			"label": "xcrun: swift test",
+			"type": "shell",
+			"command": "xcrun",
+			"args": [
+				"swift",
+				"test",
+				"-v"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$swiftc"
+			],
+			"group": {
+				"kind": "test",
+				"isDefault": true
+			}
+		},
+		{
+			"label": "xcrun: swift build",
+			"type": "shell",
+			"command": "xcrun",
+			"args": [
+				"swift",
+				"build"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$swiftc"
+			],
+			"group": {
+				"kind": "build",
+				"isDefault": true
+			}
+		},
+		{
+			"label": "swift: reset + build",
+			"type": "shell",
+			"command": "zsh",
+			"args": [
+				"-lc",
+				"swift package reset && rm -rf .build && xcrun swift build"
+			],
+			"isBackground": false,
+			"problemMatcher": [
+				"$swiftc"
+			],
+			"group": "build"
+		}
+	]
+}
