@@ -171,7 +171,7 @@ public final class RsyncProcess: @unchecked Sendable {
         try process.run()
 
         if let path = process.executableURL, let arguments = process.arguments {
-            Logger.process.debugMessageOnly("RsyncProcessStreaming: COMMAND - \(path)")
+            Logger.process.debugThreadOnly("RsyncProcessStreaming: COMMAND - \(path)")
             Logger.process.debugMessageOnly("RsyncProcessStreaming: ARGUMENTS - \(arguments.joined(separator: "\n"))")
         }
     }
