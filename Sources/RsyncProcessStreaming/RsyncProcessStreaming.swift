@@ -1,4 +1,3 @@
-// swiftlint:disable line_length
 import Atomics
 import Foundation
 import OSLog
@@ -58,7 +57,7 @@ actor StreamAccumulator {
     }
 
     func getLineCount() -> Int { lineCounter }
-    
+
     func reset() {
         lines.removeAll()
         partialLine = ""
@@ -73,7 +72,7 @@ public final class RsyncProcess: @unchecked Sendable {
     private let handlers: ProcessHandlers
     private let useFileHandler: Bool
     private let accumulator = StreamAccumulator()
-    
+
     // Thread-safe state management
     private let processLock = NSLock()
     private var currentProcess: Process?
@@ -99,7 +98,7 @@ public final class RsyncProcess: @unchecked Sendable {
         Task {
             await accumulator.reset()
         }
-        
+
         let executablePath = handlers.rsyncPath ?? "/usr/bin/rsync"
         guard FileManager.default.isExecutableFile(atPath: executablePath) else {
             throw RsyncProcessError.executableNotFound(executablePath)
@@ -142,7 +141,7 @@ public final class RsyncProcess: @unchecked Sendable {
     public var isCancelledState: Bool {
         cancelled.load(ordering: .relaxed)
     }
-    
+
     /// Returns whether the process is currently running
     public var isRunning: Bool {
         processLock.withLock {
@@ -306,7 +305,7 @@ public final class RsyncProcess: @unchecked Sendable {
 
         cleanupProcess()
     }
-    
+
     private func cleanupProcess() {
         processLock.withLock {
             currentProcess = nil
@@ -325,5 +324,3 @@ public final class RsyncProcess: @unchecked Sendable {
         Logger.process.debugMessageOnly("RsyncProcessStreaming: DEINIT")
     }
 }
-
-// swiftlint:enable line_length

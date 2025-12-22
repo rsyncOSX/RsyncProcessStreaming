@@ -13,18 +13,18 @@ import Foundation
 
 public struct ProcessHandlers {
     public let processTermination: ([String]?, Int?) -> Void
-    public let fileHandler:  (Int) -> Void
+    public let fileHandler: (Int) -> Void
     public let rsyncPath: String?
-    public let checkLineForError:  (String) throws -> Void
+    public let checkLineForError: (String) throws -> Void
     public let updateProcess: (Process?) -> Void
-    public let propagateError:  (Error) -> Void
+    public let propagateError: (Error) -> Void
     public let logger: (String, [String]) async -> Void?
     public let checkForErrorInRsyncOutput: Bool
     public let rsyncVersion3: Bool
     public let environment: [String: String]?
 
     public init(
-        processTermination: @escaping  ([String]?, Int?) -> Void,
+        processTermination: @escaping ([String]?, Int?) -> Void,
         fileHandler: @escaping (Int) -> Void,
         rsyncPath: String?,
         checkLineForError: @escaping (String) throws -> Void,
@@ -57,7 +57,7 @@ public extension ProcessHandlers {
         checkLineForError: @escaping (String) throws -> Void,
         updateProcess: @escaping (Process?) -> Void,
         propagateError: @escaping (Error) -> Void,
-        logger: @escaping (String, [String]) async -> Void? ,
+        logger: @escaping (String, [String]) async -> Void?,
         checkForErrorInRsyncOutput: Bool,
         rsyncVersion3: Bool,
         environment: [String: String]? = nil

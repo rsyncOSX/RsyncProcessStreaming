@@ -27,10 +27,8 @@ actor ActorToFile {
     }
 }
 
-
 struct RsyncProcessStreamingTests {
-    
-    final class TestState : @unchecked Sendable {
+    final class TestState: @unchecked Sendable {
         var mockOutput: [String]?
         var mockHiddenID: Int?
         var fileHandlerCount: Int = 0
@@ -438,7 +436,7 @@ struct RsyncProcessStreamingTests {
             propagateError: { error in
                 state.errorPropagated = error
             },
-            logger: { _,_  in },
+            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
             rsyncVersion3: false,
             environment: customEnv
@@ -615,7 +613,7 @@ extension RsyncProcessStreamingTests {
             propagateError: { error in
                 state.errorPropagated = error
             },
-            logger: { _,_  in },
+            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
             rsyncVersion3: false,
             environment: nil
@@ -743,7 +741,7 @@ extension RsyncProcessStreamingTests {
             propagateError: { error in
                 state.errorPropagated = error
             },
-            logger: { _,_  in },
+            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
             rsyncVersion3: false,
             environment: nil
