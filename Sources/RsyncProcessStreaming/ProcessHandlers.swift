@@ -2,30 +2,34 @@
 //  ProcessHandlers.swift
 //  RsyncProcessStreaming
 //
+//
+//  ProcessHandlers.swift
+//  RsyncProcessStreaming
+//
 //  Created by Thomas Evensen on 17/12/2025.
 //
 // swiftlint:disable function_parameter_count
 import Foundation
 
-public struct ProcessHandlers {
-    public let processTermination: ([String]?, Int?) -> Void
-    public let fileHandler: (Int) -> Void
+public struct ProcessHandlers: Sendable {
+    public let processTermination: @Sendable ([String]?, Int?) -> Void
+    public let fileHandler: @Sendable (Int) -> Void
     public let rsyncPath: String?
-    public let checkLineForError: (String) throws -> Void
-    public let updateProcess: (Process?) -> Void
-    public let propagateError: (Error) -> Void
+    public let checkLineForError: @Sendable (String) throws -> Void
+    public let updateProcess: @Sendable (Process?) -> Void
+    public let propagateError: @Sendable (Error) -> Void
     public let logger: (@Sendable (String, [String]) async -> Void)?
     public let checkForErrorInRsyncOutput: Bool
     public let rsyncVersion3: Bool
     public let environment: [String: String]?
 
     public init(
-        processTermination: @escaping ([String]?, Int?) -> Void,
-        fileHandler: @escaping (Int) -> Void,
+        processTermination: @escaping @Sendable ([String]?, Int?) -> Void,
+        fileHandler: @escaping @Sendable (Int) -> Void,
         rsyncPath: String?,
-        checkLineForError: @escaping (String) throws -> Void,
-        updateProcess: @escaping (Process?) -> Void,
-        propagateError: @escaping (Error) -> Void,
+        checkLineForError: @escaping @Sendable (String) throws -> Void,
+        updateProcess: @escaping @Sendable (Process?) -> Void,
+        propagateError: @escaping @Sendable (Error) -> Void,
         logger: (@Sendable (String, [String]) async -> Void)? = nil,
         checkForErrorInRsyncOutput: Bool,
         rsyncVersion3: Bool,
@@ -47,12 +51,12 @@ public struct ProcessHandlers {
 public extension ProcessHandlers {
     /// Create ProcessHandlers with automatic output capture enabled
     static func withOutputCapture(
-        processTermination: @escaping ([String]?, Int?) -> Void,
-        fileHandler: @escaping (Int) -> Void,
+        processTermination: @escaping @Sendable ([String]?, Int?) -> Void,
+        fileHandler: @escaping @Sendable (Int) -> Void,
         rsyncPath: String?,
-        checkLineForError: @escaping (String) throws -> Void,
-        updateProcess: @escaping (Process?) -> Void,
-        propagateError: @escaping (Error) -> Void,
+        checkLineForError: @escaping @Sendable (String) throws -> Void,
+        updateProcess: @escaping @Sendable (Process?) -> Void,
+        propagateError: @escaping @Sendable (Error) -> Void,
         logger: (@Sendable (String, [String]) async -> Void)? = nil,
         checkForErrorInRsyncOutput: Bool,
         rsyncVersion3: Bool,
