@@ -438,7 +438,7 @@ struct RsyncProcessStreamingTests {
             propagateError: { error in
                 state.errorPropagated = error
             },
-            logger: nil,
+            logger: { _,_  in },
             checkForErrorInRsyncOutput: false,
             rsyncVersion3: false,
             environment: customEnv
@@ -615,7 +615,7 @@ extension RsyncProcessStreamingTests {
             propagateError: { error in
                 state.errorPropagated = error
             },
-            logger: nil,
+            logger: { _,_  in },
             checkForErrorInRsyncOutput: false,
             rsyncVersion3: false,
             environment: nil
@@ -743,7 +743,7 @@ extension RsyncProcessStreamingTests {
             propagateError: { error in
                 state.errorPropagated = error
             },
-            logger: nil,
+            logger: { _,_  in },
             checkForErrorInRsyncOutput: false,
             rsyncVersion3: false,
             environment: nil
