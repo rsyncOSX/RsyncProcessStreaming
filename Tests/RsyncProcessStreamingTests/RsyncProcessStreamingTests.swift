@@ -71,25 +71,25 @@ struct RsyncProcessStreamingTests {
         state: TestState
     ) -> ProcessHandlers {
         ProcessHandlers(
-            processTermination: { output, hiddenID in
+            processTermination: { [state] output, hiddenID in
                 state.mockOutput = output
                 state.mockHiddenID = hiddenID
             },
-            fileHandler: { count in
+            fileHandler: { [state] count in
                 state.fileHandlerCount = count
             },
             rsyncPath: rsyncPath,
-            checkLineForError: { line in
+            checkLineForError: { [state, printLine] line in
                 state.errorCheckCount += 1
                 printLine?(line)
                 if shouldThrowError && line.contains("error") {
                     throw MockRsyncError.testError
                 }
             },
-            updateProcess: { _ in
+            updateProcess: { [state] _ in
                 state.processUpdateCalled = true
             },
-            propagateError: { error in
+            propagateError: { [state] error in
                 state.errorPropagated = error
             },
             logger: { command, output in
@@ -932,3 +932,4 @@ extension RsyncProcessStreamingTests {
     }
 }
 // swiftlint:enable type_body_length file_length
+
