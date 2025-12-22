@@ -239,26 +239,27 @@ public final class RsyncProcess: @unchecked Sendable {
         guard !lines.isEmpty else { return }
 
         for line in lines {
-            // Recheck state for each line to allow quick termination
-            guard !cancelled.load(ordering: .relaxed),
-                  !errorOccurred.load(ordering: .relaxed) else { break }
+            // Recheck state for each line
+            if cancelled.load(ordering: .relaxed) || errorOccurred.load(ordering: .relaxed) { break }
 
-            // Update file count if needed
+            // Optimization: Dispatch to MainActor without awaiting for the file count update
+            // This prevents the background processing loop from being throttled by UI performance
+            // In RsyncProcessStreaming.swift
             if useFileHandler {
                 let count = await accumulator.incrementLineCounter()
-                await MainActor.run {
+                // Optimization: Dispatch to MainActor without awaiting to keep background processing fast
+                Task { @MainActor in
                     self.handlers.fileHandler(count)
                 }
             }
 
-            // Check line for errors
             do {
                 try handlers.checkLineForError(line)
             } catch {
                 errorOccurred.store(true, ordering: .relaxed)
                 Logger.process.debugMessageOnly("RsyncProcessStreaming: Error detected - \(error.localizedDescription)")
 
-                await MainActor.run {
+                Task { @MainActor in
                     self.handlers.propagateError(error)
                 }
                 break
