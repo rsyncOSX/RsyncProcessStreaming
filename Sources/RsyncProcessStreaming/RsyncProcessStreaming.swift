@@ -67,7 +67,7 @@ actor StreamAccumulator {
     }
 }
 
-public final class RsyncProcess: Sendable {
+public final class RsyncProcess: @unchecked Sendable {
     private let arguments: [String]
     private let hiddenID: Int?
     private let handlers: ProcessHandlers
@@ -76,7 +76,7 @@ public final class RsyncProcess: Sendable {
     
     // Thread-safe state management
     private let processLock = NSLock()
-    private nonisolated(unsafe) var currentProcess: Process?
+    private var currentProcess: Process?
     private let cancelled = ManagedAtomic<Bool>(false)
     private let errorOccurred = ManagedAtomic<Bool>(false)
 

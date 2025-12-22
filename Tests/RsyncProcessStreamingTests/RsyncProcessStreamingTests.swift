@@ -27,9 +27,9 @@ actor ActorToFile {
     }
 }
 
-@MainActor
+
 struct RsyncProcessStreamingTests {
-    @MainActor
+    
     final class TestState {
         var mockOutput: [String]?
         var mockHiddenID: Int?
