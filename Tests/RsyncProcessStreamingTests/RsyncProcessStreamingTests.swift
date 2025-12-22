@@ -486,7 +486,7 @@ struct RsyncProcessStreamingTests {
             arguments: ["--version"],
             hiddenID: 99,
             handlers: handlers,
-            fileHandler: true
+            useFileHandler: true
         )
 
         try process.executeProcess()
