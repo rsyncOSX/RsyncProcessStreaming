@@ -14,10 +14,13 @@ let package = Package(
             targets: ["RsyncProcessStreaming"]
         ),
     ],
+    dependencies: [
+        .package(url: "https://github.com/apple/swift-atomics.git", .upToNextMajor(from: "1.3.0")),
+    ],
     targets: [
         .target(
             name: "RsyncProcessStreaming",
-            dependencies: []
+            dependencies: [.product(name: "Atomics", package: "swift-atomics")],
         ),
         .testTarget(
             name: "RsyncProcessStreamingTests",
@@ -26,3 +29,4 @@ let package = Package(
     ]
 )
 // swiftlint:enable trailing_comma
+

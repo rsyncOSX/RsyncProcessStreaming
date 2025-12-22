@@ -2,6 +2,7 @@
 
 import Foundation
 import OSLog
+import Atomics
 
 public enum RsyncProcessError: Error, LocalizedError {
     case executableNotFound(String)
@@ -68,8 +69,10 @@ public final class RsyncProcess: @unchecked Sendable {
     private let accumulator = StreamAccumulator()
     private var currentProcess: Process?
     private let processLock = NSLock()
-    private var isCancelled = false
-    private var hasErrorOccurred = false
+    
+    // Use atomic flag for cancellation checking
+    private let cancelled = ManagedAtomic<Bool>(false)
+    private let errorOccurred = ManagedAtomic<Bool>(false)
 
     public init(
         arguments: [String],
@@ -81,15 +84,6 @@ public final class RsyncProcess: @unchecked Sendable {
         self.hiddenID = hiddenID
         self.handlers = handlers
         self.useFileHandler = useFileHandler
-    }
-
-    public convenience init(
-        arguments: [String],
-        hiddenID: Int? = nil,
-        handlers: ProcessHandlers,
-        fileHandler: Bool
-    ) {
-        self.init(arguments: arguments, hiddenID: hiddenID, handlers: handlers, useFileHandler: fileHandler)
     }
 
     public func executeProcess() throws {
@@ -109,12 +103,37 @@ public final class RsyncProcess: @unchecked Sendable {
         process.standardError = errorPipe
 
         // Store process reference before starting
-        processLock.lock()
-        currentProcess = process
-        processLock.unlock()
+        processLock.withLock {
+            currentProcess = process
+        }
 
         handlers.updateProcess(process)
 
+        setupPipeHandlers(outputPipe: outputPipe, errorPipe: errorPipe)
+        setupTerminationHandler(process: process, outputPipe: outputPipe, errorPipe: errorPipe)
+
+        try process.run()
+        logProcessStart(process)
+    }
+
+    /// Cancels the running process
+    public func cancel() {
+        cancelled.store(true, ordering: .relaxed)
+        
+        let process = processLock.withLock { currentProcess }
+        process?.terminate()
+
+        Logger.process.debugMessageOnly("RsyncProcessStreaming: Process cancelled")
+    }
+
+    /// Returns whether the process has been cancelled
+    public var isCancelledState: Bool {
+        cancelled.load(ordering: .relaxed)
+    }
+
+    // MARK: - Private Setup Methods
+
+    private func setupPipeHandlers(outputPipe: Pipe, errorPipe: Pipe) {
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
             guard let self = self else { return }
 
@@ -138,75 +157,74 @@ public final class RsyncProcess: @unchecked Sendable {
                 await self.accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
+    }
 
+    private func setupTerminationHandler(process: Process, outputPipe: Pipe, errorPipe: Pipe) {
         process.terminationHandler = { [weak self] task in
             guard let self = self else { return }
 
-            // This ensures we capture all output even if termination happens quickly
+            // Capture remaining output before cleaning up handlers
             let finalOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
             let finalErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
 
-            // Now safe to remove handlers
+            // Remove handlers to prevent further callbacks
             outputPipe.fileHandleForReading.readabilityHandler = nil
             errorPipe.fileHandleForReading.readabilityHandler = nil
 
             Task {
-                // Process any final output data that was still in the pipe
-                if let text = String(data: finalOutputData, encoding: .utf8), !text.isEmpty {
-                    await self.handleOutputData(text)
-                }
-
-                // Flush any remaining partial line
-                _ = await self.accumulator.flushTrailing()
-
-                // Process any final error data
-                if let errorText = String(data: finalErrorData, encoding: .utf8), !errorText.isEmpty {
-                    await self.accumulator.recordError(errorText.trimmingCharacters(in: .whitespacesAndNewlines))
-                }
-
-                await self.handleTermination(task: task)
+                await self.processFinalOutput(
+                    finalOutputData: finalOutputData,
+                    finalErrorData: finalErrorData,
+                    task: task
+                )
             }
         }
+    }
 
-        try process.run()
-
+    private func logProcessStart(_ process: Process) {
         if let path = process.executableURL, let arguments = process.arguments {
             Logger.process.debugThreadOnly("RsyncProcessStreaming: COMMAND - \(path)")
             Logger.process.debugMessageOnly("RsyncProcessStreaming: ARGUMENTS - \(arguments.joined(separator: "\n"))")
         }
     }
 
-    /// Cancels the running process
-    public func cancel() {
-        processLock.lock()
-        isCancelled = true
-        let process = currentProcess
-        processLock.unlock()
+    // MARK: - Private Processing Methods
 
-        process?.terminate()
+    private func processFinalOutput(
+        finalOutputData: Data,
+        finalErrorData: Data,
+        task: Process
+    ) async {
+        // Process any final output data that was still in the pipe
+        if let text = String(data: finalOutputData, encoding: .utf8), !text.isEmpty {
+            await handleOutputData(text)
+        }
 
-        Logger.process.debugMessageOnly("RsyncProcessStreaming: Process cancelled")
-    }
+        // Flush any remaining partial line
+        _ = await accumulator.flushTrailing()
 
-    /// Returns whether the process has been cancelled
-    public var isCancelledState: Bool {
-        processLock.lock()
-        defer { processLock.unlock() }
-        return isCancelled
+        // Process any final error data
+        if let errorText = String(data: finalErrorData, encoding: .utf8), !errorText.isEmpty {
+            await accumulator.recordError(errorText.trimmingCharacters(in: .whitespacesAndNewlines))
+        }
+
+        await handleTermination(task: task)
     }
 
     private func handleOutputData(_ text: String) async {
         // Check if we've been cancelled or if an error has occurred
-        guard !isCancelled, !hasErrorOccurred else { return }
+        guard !cancelled.load(ordering: .relaxed),
+              !errorOccurred.load(ordering: .relaxed) else { return }
 
         let lines = await accumulator.consume(text)
         guard !lines.isEmpty else { return }
 
         for line in lines {
-            // Check again in loop in case error occurs during processing
-            guard !isCancelled, !hasErrorOccurred else { break }
+            // Recheck state for each line
+            guard !cancelled.load(ordering: .relaxed),
+                  !errorOccurred.load(ordering: .relaxed) else { break }
 
-            // Handle file counting - do this atomically with the line processing
+            // Update file count if needed
             if useFileHandler {
                 let count = await accumulator.incrementLineCounter()
                 await MainActor.run {
@@ -218,13 +236,12 @@ public final class RsyncProcess: @unchecked Sendable {
             do {
                 try handlers.checkLineForError(line)
             } catch {
-                // Mark that an error has occurred to prevent further processing
-                hasErrorOccurred = true
-
+                errorOccurred.store(true, ordering: .relaxed)
+                Logger.process.debugMessageOnly("RsyncProcessStreaming: Error detected in output - \(error.localizedDescription)")
+                
                 await MainActor.run {
                     self.handlers.propagateError(error)
                 }
-
                 break
             }
         }
@@ -235,7 +252,7 @@ public final class RsyncProcess: @unchecked Sendable {
         let errors = await accumulator.errorSnapshot()
 
         // Check if this was a cancellation
-        if isCancelled {
+        if cancelled.load(ordering: .relaxed) {
             await MainActor.run {
                 self.handlers.propagateError(RsyncProcessError.processCancelled)
                 self.handlers.processTermination(output, self.hiddenID)
@@ -250,6 +267,8 @@ public final class RsyncProcess: @unchecked Sendable {
                 exitCode: task.terminationStatus,
                 errors: errors
             )
+            Logger.process.debugMessageOnly("RsyncProcessStreaming: Process failed with exit code \(task.terminationStatus)")
+            
             await MainActor.run {
                 self.handlers.propagateError(error)
             }
@@ -268,9 +287,7 @@ public final class RsyncProcess: @unchecked Sendable {
 
     deinit {
         // Ensure process is terminated if RsyncProcess is deallocated
-        processLock.lock()
-        let process = currentProcess
-        processLock.unlock()
+        let process = processLock.withLock { currentProcess }
 
         if let process = process, process.isRunning {
             process.terminate()
