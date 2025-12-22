@@ -1,8 +1,7 @@
-// swiftlint:disable cyclomatic_complexity function_body_length
-
+// swiftlint:disable line_length
+import Atomics
 import Foundation
 import OSLog
-import Atomics
 
 public enum RsyncProcessError: Error, LocalizedError {
     case executableNotFound(String)
@@ -69,7 +68,7 @@ public final class RsyncProcess: @unchecked Sendable {
     private let accumulator = StreamAccumulator()
     private var currentProcess: Process?
     private let processLock = NSLock()
-    
+
     // Use atomic flag for cancellation checking
     private let cancelled = ManagedAtomic<Bool>(false)
     private let errorOccurred = ManagedAtomic<Bool>(false)
@@ -119,7 +118,7 @@ public final class RsyncProcess: @unchecked Sendable {
     /// Cancels the running process
     public func cancel() {
         cancelled.store(true, ordering: .relaxed)
-        
+
         let process = processLock.withLock { currentProcess }
         process?.terminate()
 
@@ -135,7 +134,7 @@ public final class RsyncProcess: @unchecked Sendable {
 
     private func setupPipeHandlers(outputPipe: Pipe, errorPipe: Pipe) {
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            guard let self = self else { return }
+            guard let self else { return }
 
             let data = handle.availableData
             guard data.count > 0 else { return }
@@ -147,7 +146,7 @@ public final class RsyncProcess: @unchecked Sendable {
         }
 
         errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            guard let self = self else { return }
+            guard let self else { return }
 
             let data = handle.availableData
             guard data.count > 0 else { return }
@@ -161,7 +160,7 @@ public final class RsyncProcess: @unchecked Sendable {
 
     private func setupTerminationHandler(process: Process, outputPipe: Pipe, errorPipe: Pipe) {
         process.terminationHandler = { [weak self] task in
-            guard let self = self else { return }
+            guard let self else { return }
 
             // Capture remaining output before cleaning up handlers
             let finalOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
@@ -237,8 +236,9 @@ public final class RsyncProcess: @unchecked Sendable {
                 try handlers.checkLineForError(line)
             } catch {
                 errorOccurred.store(true, ordering: .relaxed)
-                Logger.process.debugMessageOnly("RsyncProcessStreaming: Error detected in output - \(error.localizedDescription)")
-                
+                let message = "RsyncProcessStreaming: Error detected in output - \(error.localizedDescription)"
+                Logger.process.debugMessageOnly(message)
+
                 await MainActor.run {
                     self.handlers.propagateError(error)
                 }
@@ -267,8 +267,9 @@ public final class RsyncProcess: @unchecked Sendable {
                 exitCode: task.terminationStatus,
                 errors: errors
             )
-            Logger.process.debugMessageOnly("RsyncProcessStreaming: Process failed with exit code \(task.terminationStatus)")
-            
+            let message = "RsyncProcessStreaming: Process failed with exit code \(task.terminationStatus) - \(error.localizedDescription)"
+            Logger.process.debugMessageOnly(message)
+
             await MainActor.run {
                 self.handlers.propagateError(error)
             }
@@ -289,7 +290,7 @@ public final class RsyncProcess: @unchecked Sendable {
         // Ensure process is terminated if RsyncProcess is deallocated
         let process = processLock.withLock { currentProcess }
 
-        if let process = process, process.isRunning {
+        if let process, process.isRunning {
             process.terminate()
             Logger.process.debugMessageOnly("RsyncProcessStreaming: Process terminated in deinit")
         }
@@ -298,4 +299,4 @@ public final class RsyncProcess: @unchecked Sendable {
     }
 }
 
-// swiftlint:enable cyclomatic_complexity function_body_length
+// swiftlint:enable line_length

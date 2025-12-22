@@ -68,8 +68,9 @@ public extension ProcessHandlers {
             logger: logger,
             checkForErrorInRsyncOutput: checkForErrorInRsyncOutput,
             rsyncVersion3: rsyncVersion3,
-            environment: environment,
+            environment: environment
         )
     }
 }
+
 // swiftlint:enable function_parameter_count

@@ -20,7 +20,7 @@ let package = Package(
     targets: [
         .target(
             name: "RsyncProcessStreaming",
-            dependencies: [.product(name: "Atomics", package: "swift-atomics")],
+            dependencies: [.product(name: "Atomics", package: "swift-atomics")]
         ),
         .testTarget(
             name: "RsyncProcessStreamingTests",
@@ -29,4 +29,3 @@ let package = Package(
     ]
 )
 // swiftlint:enable trailing_comma
-

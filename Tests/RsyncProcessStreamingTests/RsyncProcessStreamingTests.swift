@@ -2,6 +2,7 @@ import Foundation
 import OSLog
 @testable import RsyncProcessStreaming
 import Testing
+
 // swiftlint:disable type_body_length file_length
 
 actor ActorToFile {
@@ -38,7 +39,7 @@ struct RsyncProcessStreamingTests {
         var loggerCalled: Bool = false
         var loggedID: String?
         var loggedOutput: [String]?
-        var allProcessedLines: [String] = [String]()
+        var allProcessedLines: [String] = .init()
         var errorCheckCount: Int = 0
 
         func reset() {
@@ -82,7 +83,7 @@ struct RsyncProcessStreamingTests {
             checkLineForError: { [state, printLine] line in
                 state.errorCheckCount += 1
                 printLine?(line)
-                if shouldThrowError && line.contains("error") {
+                if shouldThrowError, line.contains("error") {
                     throw MockRsyncError.testError
                 }
             },
@@ -556,7 +557,6 @@ extension MockRsyncError: LocalizedError {
 }
 
 extension RsyncProcessStreamingTests {
-
     // MARK: - Tests for Process Cancellation Fix
 
     @Test("Process can be cancelled")
@@ -839,7 +839,7 @@ extension RsyncProcessStreamingTests {
         // Try to trigger concurrent access
         await withTaskGroup(of: Void.self) { group in
             group.addTask {
-                for _ in 0..<10 {
+                for _ in 0 ..< 10 {
                     _ = process.isCancelledState
                     try? await Task.sleep(nanoseconds: 10_000_000)
                 }
@@ -931,5 +931,5 @@ extension RsyncProcessStreamingTests {
         #expect(outputString.contains("rsync") || outputString.contains("usage"))
     }
 }
-// swiftlint:enable type_body_length file_length
 
+// swiftlint:enable type_body_length file_length
