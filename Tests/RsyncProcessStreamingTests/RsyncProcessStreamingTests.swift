@@ -30,7 +30,7 @@ actor ActorToFile {
 
 struct RsyncProcessStreamingTests {
     
-    final class TestState {
+    final class TestState : @unchecked Sendable {
         var mockOutput: [String]?
         var mockHiddenID: Int?
         var fileHandlerCount: Int = 0
