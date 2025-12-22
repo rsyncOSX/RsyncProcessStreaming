@@ -11,7 +11,7 @@
 // swiftlint:disable function_parameter_count
 import Foundation
 
-public struct ProcessHandlers: Sendable {
+public struct ProcessHandlers: @unchecked Sendable {
     public let processTermination: @Sendable ([String]?, Int?) -> Void
     public let fileHandler: @Sendable (Int) -> Void
     public let rsyncPath: String?
