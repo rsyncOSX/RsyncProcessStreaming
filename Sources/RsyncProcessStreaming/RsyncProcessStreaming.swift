@@ -139,7 +139,10 @@ public final class RsyncProcess {
         AsyncStream { continuation in
             handle.readabilityHandler = { handle in
                 let data = handle.availableData
-                if data.isEmpty { return }
+                if data.isEmpty {
+                    continuation.finish() // ✅ Properly terminate stream
+                    return
+                }
                 if let text = String(data: data, encoding: .utf8) {
                     continuation.yield(text)
                 }
@@ -158,6 +161,10 @@ public final class RsyncProcess {
             // Les siste rest av data manuelt før vi stenger alt
             let finalOutputData = try? outputPipe.fileHandleForReading.readToEnd()
             let finalErrorData = try? errorPipe.fileHandleForReading.readToEnd()
+
+            // Now close the handles, triggering stream completion
+            try? outputPipe.fileHandleForReading.close()
+            try? errorPipe.fileHandleForReading.close()
 
             // Dette trigger continuation.onTermination i AsyncStreams
             outputPipe.fileHandleForReading.readabilityHandler = nil
