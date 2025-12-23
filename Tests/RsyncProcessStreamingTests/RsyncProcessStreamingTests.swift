@@ -326,7 +326,7 @@ struct RsyncProcessStreamingTests {
         )
 
         // Before execution
-        let initialCancelled = await process.isCancelledState
+        let initialCancelled = await process.isCancelled
         let initialRunning = await process.isRunning
         #expect(initialCancelled == false)
         #expect(initialRunning == false)
@@ -374,13 +374,13 @@ struct RsyncProcessStreamingTests {
         try await process.executeProcess()
 
         // Verify not cancelled initially
-        let beforeCancel = await process.isCancelledState
+        let beforeCancel = await process.isCancelled
         #expect(beforeCancel == false)
 
         await process.cancel()
 
         // Verify cancelled state is set
-        let afterCancel = await process.isCancelledState
+        let afterCancel = await process.isCancelled
         #expect(afterCancel == true)
 
         // Wait for termination

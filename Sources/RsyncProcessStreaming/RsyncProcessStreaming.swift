@@ -49,6 +49,7 @@ actor StreamAccumulator {
         lineCounter += 1
         return lineCounter
     }
+
     func reset() {
         lines.removeAll()
         partialLine = ""
@@ -164,7 +165,7 @@ public final class RsyncProcess {
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.processFinalOutput(
+                await processFinalOutput(
                     finalOutputData: finalOutputData ?? Data(),
                     finalErrorData: finalErrorData ?? Data(),
                     task: task
@@ -205,6 +206,7 @@ public final class RsyncProcess {
     }
 
     public var isRunning: Bool { currentProcess?.isRunning ?? false }
+    public var isCancelled: Bool { cancelled }
 
     private func logProcessStart(_ process: Process) {
         guard let path = process.executableURL, let arguments = process.arguments else { return }
