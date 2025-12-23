@@ -151,7 +151,8 @@ public final class RsyncProcess {
             guard !data.isEmpty else { return }
             guard let text = String(data: data, encoding: .utf8), !text.isEmpty else { return }
 
-            Task {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
                 await self.handleOutputData(text)
             }
         }
@@ -163,7 +164,8 @@ public final class RsyncProcess {
             guard !data.isEmpty else { return }
             guard let text = String(data: data, encoding: .utf8), !text.isEmpty else { return }
 
-            Task {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
                 await self.accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
@@ -181,7 +183,8 @@ public final class RsyncProcess {
             outputPipe.fileHandleForReading.readabilityHandler = nil
             errorPipe.fileHandleForReading.readabilityHandler = nil
 
-            Task {
+            Task { @MainActor [weak self] in
+                guard let self else { return }
                 await self.processFinalOutput(
                     finalOutputData: finalOutputData,
                     finalErrorData: finalErrorData,
@@ -235,9 +238,7 @@ public final class RsyncProcess {
 
             if useFileHandler {
                 let count = await accumulator.incrementLineCounter()
-                Task { @MainActor in
-                    self.handlers.fileHandler(count)
-                }
+                handlers.fileHandler(count)
             }
 
             do {
@@ -250,9 +251,7 @@ public final class RsyncProcess {
                 // Terminate the process when error is detected
                 currentProcess?.terminate()
 
-                Task { @MainActor in
-                    self.handlers.propagateError(error)
-                }
+                handlers.propagateError(error)
                 break
             }
         }
@@ -265,11 +264,9 @@ public final class RsyncProcess {
         // Priority 1: Handle cancellation
         if cancelled {
             Logger.process.debugMessageOnly("RsyncProcessStreaming: Terminated due to cancellation")
-            await MainActor.run {
-                self.handlers.propagateError(RsyncProcessError.processCancelled)
-                self.handlers.processTermination(output, self.hiddenID)
-                self.handlers.updateProcess(nil)
-            }
+            handlers.propagateError(RsyncProcessError.processCancelled)
+            handlers.processTermination(output, hiddenID)
+            handlers.updateProcess(nil)
             cleanupProcess()
             return
         }
@@ -287,16 +284,12 @@ public final class RsyncProcess {
                 "RsyncProcessStreaming: Process failed with exit code \(task.terminationStatus)"
             )
 
-            await MainActor.run {
-                self.handlers.propagateError(error)
-            }
+            handlers.propagateError(error)
         }
 
         // Always call termination handler
-        await MainActor.run {
-            self.handlers.processTermination(output, self.hiddenID)
-            self.handlers.updateProcess(nil)
-        }
+        handlers.processTermination(output, hiddenID)
+        handlers.updateProcess(nil)
 
         cleanupProcess()
     }
