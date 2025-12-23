@@ -14,13 +14,9 @@ let package = Package(
             targets: ["RsyncProcessStreaming"]
         ),
     ],
-    dependencies: [
-        .package(url: "https://github.com/apple/swift-atomics.git", .upToNextMajor(from: "1.3.0")),
-    ],
     targets: [
         .target(
-            name: "RsyncProcessStreaming",
-            dependencies: [.product(name: "Atomics", package: "swift-atomics")]
+            name: "RsyncProcessStreaming"
         ),
         .testTarget(
             name: "RsyncProcessStreamingTests",

@@ -1,4 +1,4 @@
-// import Atomics
+// swiftlint:disable line_length
 import Foundation
 import OSLog
 
@@ -246,10 +246,10 @@ public final class RsyncProcess {
                 // Set error flag and terminate the process
                 errorOccurred = true
                 Logger.process.debugMessageOnly("RsyncProcessStreaming: Error detected in output - \(error.localizedDescription)")
-                
+
                 // Terminate the process when error is detected
                 currentProcess?.terminate()
-                
+
                 Task { @MainActor in
                     self.handlers.propagateError(error)
                 }
@@ -276,7 +276,7 @@ public final class RsyncProcess {
 
         // Priority 2: Handle errors detected during output processing
         // (errorOccurred flag was already set and error was propagated)
-        
+
         // Priority 3: Handle process failure based on exit code
         if task.terminationStatus != 0, handlers.checkForErrorInRsyncOutput, !errorOccurred {
             let error = RsyncProcessError.processFailed(
@@ -315,3 +315,5 @@ public final class RsyncProcess {
         Logger.process.debugMessageOnly("RsyncProcessStreaming: DEINIT")
     }
 }
+
+// swiftlint:enable line_length
