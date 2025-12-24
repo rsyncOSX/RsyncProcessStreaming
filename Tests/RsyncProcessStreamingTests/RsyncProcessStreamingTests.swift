@@ -21,6 +21,8 @@ final class TestState {
     var processUpdateCalled: Bool = false
     var processUpdateNilCalled: Bool = false
     var terminationCalled: Bool = false
+    var checkLineForErrorCalled: Bool = false
+    var lastCheckedLine: String?
 
     func reset() {
         mockOutput = nil
@@ -30,6 +32,8 @@ final class TestState {
         processUpdateCalled = false
         processUpdateNilCalled = false
         terminationCalled = false
+        checkLineForErrorCalled = false
+        lastCheckedLine = nil
     }
 }
 
@@ -168,7 +172,7 @@ struct RsyncProcessStreamingTests {
                 }
             },
             fileHandler: { _ in },
-            rsyncPath: "/usr/bin/rsync",
+            rsyncPath: "/bin/sleep",
             checkLineForError: { _ in },
             updateProcess: { _ in },
             propagateError: { error in
@@ -182,7 +186,7 @@ struct RsyncProcessStreamingTests {
         )
 
         let process = await RsyncProcess(
-            arguments: ["--help"],
+            arguments: ["5"],
             handlers: handlers
         )
 
@@ -200,7 +204,9 @@ struct RsyncProcessStreamingTests {
 
         // Wait for termination and error propagation
         try await waitFor(timeout: .seconds(3)) {
-            await state.terminationCalled // && state.errorPropagated != nil
+            let terminated = await state.terminationCalled
+            let error = await state.errorPropagated
+            return terminated && error != nil
         }
 
         let error = await state.errorPropagated
@@ -485,6 +491,149 @@ struct RsyncProcessStreamingTests {
                 Issue.record("Expected processCancelled error")
             }
         }
+    }
+
+    @Test("Trailing partial line is processed (count + error check)")
+    func trailingPartialLineIsProcessed() async throws {
+        let state = TestState()
+
+        let handlers = ProcessHandlers(
+            processTermination: { output, _ in
+                Task { @MainActor in
+                    state.mockOutput = output
+                    state.terminationCalled = true
+                }
+            },
+            fileHandler: { count in
+                Task { @MainActor in
+                    state.fileHandlerCount = max(state.fileHandlerCount, count)
+                }
+            },
+            rsyncPath: "/bin/echo",
+            checkLineForError: { line in
+                Task { @MainActor in
+                    state.checkLineForErrorCalled = true
+                    state.lastCheckedLine = line
+                }
+            },
+            updateProcess: { _ in },
+            propagateError: { error in
+                Task { @MainActor in
+                    state.errorPropagated = error
+                }
+            },
+            logger: { _, _ in },
+            checkForErrorInRsyncOutput: false,
+            rsyncVersion3: true
+        )
+
+        let process = await RsyncProcess(
+            arguments: ["-n", "hello"],
+            handlers: handlers,
+            useFileHandler: true
+        )
+
+        try await process.executeProcess()
+
+        try await waitFor(timeout: .seconds(3)) {
+            let terminated = await state.terminationCalled
+            let count = await state.fileHandlerCount
+            let output = await state.mockOutput
+            let checkLineCalled = await state.checkLineForErrorCalled
+            let lastLine = await state.lastCheckedLine
+            return terminated && count == 1 && output?.contains("hello") == true && checkLineCalled && lastLine == "hello"
+        }
+    }
+
+    @Test("Repeated executeProcess does not accumulate output")
+    func repeatedExecuteDoesNotAccumulateOutput() async throws {
+        let state = TestState()
+
+        let handlers = ProcessHandlers(
+            processTermination: { output, _ in
+                Task { @MainActor in
+                    state.mockOutput = output
+                    state.terminationCalled = true
+                }
+            },
+            fileHandler: { _ in },
+            rsyncPath: "/bin/echo",
+            checkLineForError: { _ in },
+            updateProcess: { _ in },
+            propagateError: { _ in },
+            logger: { _, _ in },
+            checkForErrorInRsyncOutput: false,
+            rsyncVersion3: true
+        )
+
+        let process = await RsyncProcess(
+            arguments: ["one"],
+            handlers: handlers,
+            useFileHandler: false
+        )
+
+        try await process.executeProcess()
+        try await waitFor { await state.terminationCalled }
+        let firstOutput = await state.mockOutput
+        #expect(firstOutput == ["one"])
+
+        await state.reset()
+
+        try await process.executeProcess()
+        try await waitFor { await state.terminationCalled }
+        let secondOutput = await state.mockOutput
+        #expect(secondOutput == ["one"])
+    }
+
+    @Test("Non-zero exit propagates processFailed when enabled")
+    func nonZeroExitPropagatesProcessFailed() async throws {
+        let state = TestState()
+
+        let handlers = ProcessHandlers(
+            processTermination: { _, _ in
+                Task { @MainActor in
+                    state.terminationCalled = true
+                }
+            },
+            fileHandler: { _ in },
+            rsyncPath: "/usr/bin/false",
+            checkLineForError: { _ in },
+            updateProcess: { _ in },
+            propagateError: { error in
+                Task { @MainActor in
+                    state.errorPropagated = error
+                }
+            },
+            logger: { _, _ in },
+            checkForErrorInRsyncOutput: true,
+            rsyncVersion3: true
+        )
+
+        let process = await RsyncProcess(
+            arguments: [],
+            handlers: handlers,
+            useFileHandler: false
+        )
+
+        try await process.executeProcess()
+
+        try await waitFor(timeout: .seconds(3)) {
+            let terminated = await state.terminationCalled
+            let error = await state.errorPropagated
+            return terminated && error != nil
+        }
+
+        guard let error = await state.errorPropagated as? RsyncProcessError else {
+            Issue.record("Expected RsyncProcessError")
+            return
+        }
+
+        guard case let .processFailed(exitCode, _) = error else {
+            Issue.record("Expected processFailed")
+            return
+        }
+
+        #expect(exitCode != 0)
     }
 }
 

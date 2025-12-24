@@ -72,7 +72,7 @@ public final class RsyncProcess {
     private let hiddenID: Int?
     private let handlers: ProcessHandlers
     private let useFileHandler: Bool
-    private let accumulator = StreamAccumulator()
+    private var accumulator = StreamAccumulator()
 
     // MainActor-isolated state
     private var currentProcess: Process?
@@ -95,9 +95,7 @@ public final class RsyncProcess {
         // Reset state for reuse
         cancelled = false
         errorOccurred = false
-        Task {
-            await accumulator.reset()
-        }
+        accumulator = StreamAccumulator()
 
         let executablePath = handlers.rsyncPath ?? "/usr/bin/rsync"
         guard FileManager.default.isExecutableFile(atPath: executablePath) else {
@@ -166,7 +164,8 @@ public final class RsyncProcess {
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                await accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                await
+                 accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
     }
@@ -215,6 +214,7 @@ public final class RsyncProcess {
         // Flush any remaining partial line
         if let trailing = await accumulator.flushTrailing() {
             Logger.process.debugMessageOnly("RsyncProcessStreaming: Flushed trailing output: \(trailing)")
+            await processOutputLine(trailing)
         }
 
         // Process any final error data
@@ -236,24 +236,26 @@ public final class RsyncProcess {
             // Recheck state for each line
             if cancelled || errorOccurred { break }
 
-            if useFileHandler {
-                let count = await accumulator.incrementLineCounter()
-                handlers.fileHandler(count)
-            }
+            await processOutputLine(line)
+        }
+    }
 
-            do {
-                try handlers.checkLineForError(line)
-            } catch {
-                // Set error flag and terminate the process
-                errorOccurred = true
-                Logger.process.debugMessageOnly("RsyncProcessStreaming: Error detected in output - \(error.localizedDescription)")
+    private func processOutputLine(_ line: String) async {
+        guard !cancelled, !errorOccurred else { return }
 
-                // Terminate the process when error is detected
-                currentProcess?.terminate()
+        if useFileHandler {
+            let count = await accumulator.incrementLineCounter()
+            handlers.fileHandler(count)
+        }
 
-                handlers.propagateError(error)
-                break
-            }
+        do {
+            try handlers.checkLineForError(line)
+        } catch {
+            errorOccurred = true
+            Logger.process.debugMessageOnly("RsyncProcessStreaming: Error detected in output - \(error.localizedDescription)")
+
+            currentProcess?.terminate()
+            handlers.propagateError(error)
         }
     }
 
