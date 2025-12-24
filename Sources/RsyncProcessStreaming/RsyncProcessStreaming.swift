@@ -255,7 +255,7 @@ public final class RsyncProcess {
     }
 
     deinit {
-        Logger.process.debugThreadOnly("RsyncProcessStreaming: DEINIT")
+        Logger.process.debugMessageOnly("RsyncProcessStreaming: DEINIT")
         if let process = currentProcess, process.isRunning {
             process.terminate()
         }
