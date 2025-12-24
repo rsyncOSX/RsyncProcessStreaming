@@ -153,7 +153,7 @@ public final class RsyncProcess {
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.handleOutputData(text)
+                await handleOutputData(text)
             }
         }
 
@@ -166,7 +166,7 @@ public final class RsyncProcess {
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                await accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
     }
@@ -185,7 +185,7 @@ public final class RsyncProcess {
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                await self.processFinalOutput(
+                await processFinalOutput(
                     finalOutputData: finalOutputData,
                     finalErrorData: finalErrorData,
                     task: task

@@ -1,3 +1,4 @@
+// swiftlint:disable type_body_length file_length line_length
 import Foundation
 import OSLog
 @testable import RsyncProcessStreaming
@@ -203,19 +204,20 @@ struct RsyncProcessStreamingTests {
         }
 
         let error = await state.errorPropagated
-        let isNil = error == nil
-
-        // #expect(!isNil, "Expected cancellation error to be propagated")
+        #expect(error != nil, "Expected cancellation error to be propagated")
 
         // Verify it's a cancellation error
-        if let rsyncError = error as? RsyncProcessError {
-            let isCancelledError = if case .processCancelled = rsyncError {
-                true
-            } else {
-                false
-            }
-            #expect(isCancelledError, "Expected RsyncProcessError.processCancelled")
+        guard let rsyncError = error as? RsyncProcessError else {
+            Issue.record("Expected error to be RsyncProcessError")
+            return
         }
+
+        let isCancelledError = if case .processCancelled = rsyncError {
+            true
+        } else {
+            false
+        }
+        #expect(isCancelledError, "Expected RsyncProcessError.processCancelled")
     }
 
     @Test("Error in line detection stops process and propagates error")
@@ -326,7 +328,7 @@ struct RsyncProcessStreamingTests {
         )
 
         // Before execution
-        let initialCancelled = await process.isCancelled
+        let initialCancelled = await process.isCancelledState
         let initialRunning = await process.isRunning
         #expect(initialCancelled == false)
         #expect(initialRunning == false)
@@ -335,7 +337,6 @@ struct RsyncProcessStreamingTests {
 
         // During execution - check quickly while it might still be running
         try await Task.sleep(for: .milliseconds(10))
-        let duringRunning = await process.isRunning
         // Note: Process might complete quickly, so we don't assert this
 
         // Wait for termination
@@ -374,13 +375,13 @@ struct RsyncProcessStreamingTests {
         try await process.executeProcess()
 
         // Verify not cancelled initially
-        let beforeCancel = await process.isCancelled
+        let beforeCancel = await process.isCancelledState
         #expect(beforeCancel == false)
 
         await process.cancel()
 
         // Verify cancelled state is set
-        let afterCancel = await process.isCancelled
+        let afterCancel = await process.isCancelledState
         #expect(afterCancel == true)
 
         // Wait for termination
@@ -486,3 +487,5 @@ struct RsyncProcessStreamingTests {
         }
     }
 }
+
+// swiftlint:enable type_body_length file_length line_length
