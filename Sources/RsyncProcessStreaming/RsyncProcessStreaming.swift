@@ -66,6 +66,11 @@ public final class RsyncProcess {
     private let useFileHandler: Bool
     private let accumulator = StreamAccumulator()
 
+    private var completion = CompletionCoordinator()
+
+    private var outputPipe: Pipe?
+    private var errorPipe: Pipe?
+
     private var currentProcess: Process?
     private var cancelled = false
     private var errorOccurred = false
@@ -86,6 +91,7 @@ public final class RsyncProcess {
         cancelled = false
         errorOccurred = false
         Task { await accumulator.reset() }
+        completion = CompletionCoordinator()
 
         let executablePath = handlers.rsyncPath ?? "/usr/bin/rsync"
         guard FileManager.default.isExecutableFile(atPath: executablePath) else {
@@ -102,6 +108,9 @@ public final class RsyncProcess {
         process.standardOutput = outputPipe
         process.standardError = errorPipe
 
+        self.outputPipe = outputPipe
+        self.errorPipe = errorPipe
+
         currentProcess = process
         handlers.updateProcess(process)
 
@@ -110,13 +119,23 @@ public final class RsyncProcess {
         setupTerminationHandler(process: process, outputPipe: outputPipe, errorPipe: errorPipe)
 
         try process.run()
+
+        // Important: close the parent's copy of the write-ends so EOF is observed
+        // when the child exits (otherwise the read side may never see EOF).
+        try? outputPipe.fileHandleForWriting.close()
+        try? errorPipe.fileHandleForWriting.close()
         logProcessStart(process)
     }
 
     private func setupPipeHandlers(outputPipe: Pipe, errorPipe: Pipe) {
         // Håndter Standard Output via AsyncStream
         Task { [weak self] in
-            let outputStream = self?.createAsyncStream(for: outputPipe.fileHandleForReading)
+            let outputStream = self?.createAsyncStream(
+                for: outputPipe.fileHandleForReading,
+                onEOF: { [weak self] in
+                    Task { await self?.markStdoutEOF() }
+                }
+            )
             if let outputStream {
                 for await text in outputStream {
                     await self?.handleOutputData(text)
@@ -126,7 +145,12 @@ public final class RsyncProcess {
 
         // Håndter Standard Error via AsyncStream
         Task { [weak self] in
-            let errorStream = self?.createAsyncStream(for: errorPipe.fileHandleForReading)
+            let errorStream = self?.createAsyncStream(
+                for: errorPipe.fileHandleForReading,
+                onEOF: { [weak self] in
+                    Task { await self?.markStderrEOF() }
+                }
+            )
             if let errorStream {
                 for await text in errorStream {
                     await self?.accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
@@ -135,12 +159,15 @@ public final class RsyncProcess {
         }
     }
 
-    private func createAsyncStream(for handle: FileHandle) -> AsyncStream<String> {
+    private func createAsyncStream(for handle: FileHandle, onEOF: @escaping @Sendable () -> Void) -> AsyncStream<String> {
         AsyncStream { continuation in
             handle.readabilityHandler = { handle in
                 let data = handle.availableData
                 if data.isEmpty {
-                    continuation.finish() // ✅ Properly terminate stream
+                    // EOF
+                    handle.readabilityHandler = nil
+                    continuation.finish()
+                    onEOF()
                     return
                 }
                 if let text = String(data: data, encoding: .utf8) {
@@ -158,33 +185,17 @@ public final class RsyncProcess {
         process.terminationHandler = { [weak self] task in
             guard let self else { return }
 
-            // Les siste rest av data manuelt før vi stenger alt
-            let finalOutputData = try? outputPipe.fileHandleForReading.readToEnd()
-            let finalErrorData = try? errorPipe.fileHandleForReading.readToEnd()
-
-            // Now close the handles, triggering stream completion
-            try? outputPipe.fileHandleForReading.close()
-            try? errorPipe.fileHandleForReading.close()
-
-            // Dette trigger continuation.onTermination i AsyncStreams
-            outputPipe.fileHandleForReading.readabilityHandler = nil
-            errorPipe.fileHandleForReading.readabilityHandler = nil
-
-            Task { @MainActor [weak self] in
-                guard let self else { return }
-                await processFinalOutput(
-                    finalOutputData: finalOutputData ?? Data(),
-                    finalErrorData: finalErrorData ?? Data(),
-                    task: task
-                )
+            Task {
+                await self.markProcessTerminated(task)
             }
         }
     }
 
     private func handleOutputData(_ text: String) async {
+        let lines = await accumulator.consume(text)
+        // Keep draining stdout to avoid pipe backpressure even if cancelled/error.
         guard !cancelled, !errorOccurred else { return }
 
-        let lines = await accumulator.consume(text)
         for line in lines {
             if cancelled || errorOccurred { break }
 
@@ -221,19 +232,6 @@ public final class RsyncProcess {
         Logger.process.debugMessageOnly("RsyncProcessStreaming: ARGUMENTS - \(arguments.joined(separator: "\n"))")
     }
 
-    private func processFinalOutput(finalOutputData: Data, finalErrorData: Data, task: Process) async {
-        if let text = String(data: finalOutputData, encoding: .utf8), !text.isEmpty {
-            await handleOutputData(text)
-        }
-        if let trailing = await accumulator.flushTrailing() {
-            Logger.process.debugMessageOnly("Flushed trailing: \(trailing)")
-        }
-        if let errorText = String(data: finalErrorData, encoding: .utf8), !errorText.isEmpty {
-            await accumulator.recordError(errorText.trimmingCharacters(in: .whitespacesAndNewlines))
-        }
-        await handleTermination(task: task)
-    }
-
     private func handleTermination(task: Process) async {
         let output = await accumulator.snapshot()
         let errors = await accumulator.errorSnapshot()
@@ -242,6 +240,7 @@ public final class RsyncProcess {
             handlers.propagateError(RsyncProcessError.processCancelled)
             handlers.processTermination(output, hiddenID)
             handlers.updateProcess(nil)
+            cleanupPipes()
             return
         }
 
@@ -252,6 +251,22 @@ public final class RsyncProcess {
         handlers.processTermination(output, hiddenID)
         handlers.updateProcess(nil)
         currentProcess = nil
+
+        cleanupPipes()
+    }
+
+    private func cleanupPipes() {
+        // Cleanup: close read handles if they are still open.
+        if let outputPipe {
+            outputPipe.fileHandleForReading.readabilityHandler = nil
+            try? outputPipe.fileHandleForReading.close()
+        }
+        if let errorPipe {
+            errorPipe.fileHandleForReading.readabilityHandler = nil
+            try? errorPipe.fileHandleForReading.close()
+        }
+        self.outputPipe = nil
+        self.errorPipe = nil
     }
 
     deinit {
@@ -259,5 +274,63 @@ public final class RsyncProcess {
         if let process = currentProcess, process.isRunning {
             process.terminate()
         }
+    }
+}
+
+private actor CompletionCoordinator {
+    private var stdoutEOF = false
+    private var stderrEOF = false
+    private var processTerminated = false
+    private var finalized = false
+
+    func markStdoutEOF() -> Bool {
+        stdoutEOF = true
+        return takeFinalizeIfReady()
+    }
+
+    func markStderrEOF() -> Bool {
+        stderrEOF = true
+        return takeFinalizeIfReady()
+    }
+
+    func markProcessTerminated() -> Bool {
+        processTerminated = true
+        return takeFinalizeIfReady()
+    }
+
+    private func takeFinalizeIfReady() -> Bool {
+        guard !finalized, stdoutEOF, stderrEOF, processTerminated else { return false }
+        finalized = true
+        return true
+    }
+}
+
+private extension RsyncProcess {
+    func markStdoutEOF() async {
+        if await completion.markStdoutEOF() {
+            await finalizeAfterDrain()
+        }
+    }
+
+    func markStderrEOF() async {
+        if await completion.markStderrEOF() {
+            await finalizeAfterDrain()
+        }
+    }
+
+    func markProcessTerminated(_ task: Process) async {
+        if await completion.markProcessTerminated() {
+            await finalizeAfterDrain(process: task)
+        }
+    }
+
+    func finalizeAfterDrain(process: Process? = nil) async {
+        let task = process ?? currentProcess
+        guard let task else { return }
+
+        if let trailing = await accumulator.flushTrailing() {
+            Logger.process.debugMessageOnly("Flushed trailing: \(trailing)")
+        }
+        await handleTermination(task: task)
     }
 }
