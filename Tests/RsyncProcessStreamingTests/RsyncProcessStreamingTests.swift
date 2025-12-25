@@ -485,4 +485,60 @@ struct RsyncProcessStreamingTests {
             }
         }
     }
+    
+    @Test("Process state checks work correctly")
+    func processRealTest() async throws {
+        let state = TestState()
+
+        let handlers = ProcessHandlers(
+            processTermination: { _, _ in
+                Task { @MainActor in
+                    state.terminationCalled = true
+                }
+            },
+            fileHandler: { _ in },
+            rsyncPath: "/usr/bin/rsync",
+            checkLineForError: { _ in },
+            updateProcess: { _ in },
+            propagateError: { _ in },
+            logger: { _, _ in },
+            checkForErrorInRsyncOutput: false,
+            rsyncVersion3: true
+        )
+
+        let process = await RsyncProcess(
+            arguments: ["--archive",
+                        "--verbose",
+                        "--delete",
+                        "--dry-run",
+                        "--stats",
+                        "/Users/thomas/tmp/source/",
+                        " /Users/thomas/tmp/destination/"],
+            handlers: handlers
+        )
+
+        // Before execution
+        let initialCancelled = await process.isCancelled
+        let initialRunning = await process.isRunning
+        #expect(initialCancelled == false)
+        #expect(initialRunning == false)
+
+        try await process.executeProcess()
+
+        // During execution - check quickly while it might still be running
+        try await Task.sleep(for: .milliseconds(10))
+        let duringRunning = await process.isRunning
+        // Note: Process might complete quickly, so we don't assert this
+
+        // Wait for termination
+        try await waitFor { await state.terminationCalled }
+        let data = await process.accumulator.snapshot()
+        for line in data.split(separator: "\n") {
+            print(line)
+        }
+        // After execution
+        let afterRunning = await process.isRunning
+        #expect(afterRunning == false)
+        
+    }
 }

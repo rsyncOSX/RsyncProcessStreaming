@@ -64,7 +64,7 @@ public final class RsyncProcess {
     private let hiddenID: Int?
     private let handlers: ProcessHandlers
     private let useFileHandler: Bool
-    private let accumulator = StreamAccumulator()
+    let accumulator = StreamAccumulator()
 
     private var currentProcess: Process?
     private var cancelled = false
