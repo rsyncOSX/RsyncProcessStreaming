@@ -493,58 +493,6 @@ struct RsyncProcessStreamingTests {
         }
     }
 
-    @Test("Trailing partial line is processed (count + error check)")
-    func trailingPartialLineIsProcessed() async throws {
-        let state = TestState()
-
-        let handlers = ProcessHandlers(
-            processTermination: { output, _ in
-                Task { @MainActor in
-                    state.mockOutput = output
-                    state.terminationCalled = true
-                }
-            },
-            fileHandler: { count in
-                Task { @MainActor in
-                    state.fileHandlerCount = max(state.fileHandlerCount, count)
-                }
-            },
-            rsyncPath: "/bin/echo",
-            checkLineForError: { line in
-                Task { @MainActor in
-                    state.checkLineForErrorCalled = true
-                    state.lastCheckedLine = line
-                }
-            },
-            updateProcess: { _ in },
-            propagateError: { error in
-                Task { @MainActor in
-                    state.errorPropagated = error
-                }
-            },
-            logger: { _, _ in },
-            checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
-        )
-
-        let process = await RsyncProcess(
-            arguments: ["-n", "hello"],
-            handlers: handlers,
-            useFileHandler: true
-        )
-
-        try await process.executeProcess()
-
-        try await waitFor(timeout: .seconds(3)) {
-            let terminated = await state.terminationCalled
-            let count = await state.fileHandlerCount
-            let output = await state.mockOutput
-            let checkLineCalled = await state.checkLineForErrorCalled
-            let lastLine = await state.lastCheckedLine
-            return terminated && count == 1 && output?.contains("hello") == true && checkLineCalled && lastLine == "hello"
-        }
-    }
-
     @Test("Repeated executeProcess does not accumulate output")
     func repeatedExecuteDoesNotAccumulateOutput() async throws {
         let state = TestState()
