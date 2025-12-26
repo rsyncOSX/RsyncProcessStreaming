@@ -29,6 +29,7 @@ actor StreamAccumulator {
     func consume(_ text: String) -> [String] {
         let combined = partialLine + text
         let parts = combined.components(separatedBy: .newlines)
+        // The last part is either empty (if text ended in \n) or a partial line
         partialLine = parts.last ?? ""
         let newLines = parts.dropLast().filter { !$0.isEmpty }
         lines.append(contentsOf: newLines)
@@ -39,8 +40,12 @@ actor StreamAccumulator {
         guard !partialLine.isEmpty else { return nil }
         let trailing = partialLine
         partialLine = ""
-        lines.append(trailing)
-        return trailing
+        // Ensure we don't return just whitespace as a valid line
+        if !trailing.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            lines.append(trailing)
+            return trailing
+        }
+        return nil
     }
 
     func snapshot() -> [String] { lines }
@@ -122,19 +127,16 @@ public final class RsyncProcess {
         logProcessStart(process)
     }
 
-    /// Cancels the running process
     public func cancel() {
         cancelled = true
         currentProcess?.terminate()
         Logger.process.debugMessageOnly("RsyncProcessStreaming: Process cancelled")
     }
 
-    /// Returns whether the process has been cancelled
     public var isCancelledState: Bool {
         cancelled
     }
 
-    /// Returns whether the process is currently running
     public var isRunning: Bool {
         currentProcess?.isRunning ?? false
     }
@@ -143,29 +145,21 @@ public final class RsyncProcess {
 
     private func setupPipeHandlers(outputPipe: Pipe, errorPipe: Pipe) {
         outputPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            guard let self else { return }
-
             let data = handle.availableData
-            guard !data.isEmpty else { return }
-            guard let text = String(data: data, encoding: .utf8), !text.isEmpty else { return }
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
 
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                await handleOutputData(text)
+                // Fix: Always use handleOutputData to ensure accumulator logic is applied
+                await self?.handleOutputData(text)
             }
         }
 
         errorPipe.fileHandleForReading.readabilityHandler = { [weak self] handle in
-            guard let self else { return }
-
             let data = handle.availableData
-            guard !data.isEmpty else { return }
-            guard let text = String(data: data, encoding: .utf8), !text.isEmpty else { return }
+            guard !data.isEmpty, let text = String(data: data, encoding: .utf8) else { return }
 
             Task { @MainActor [weak self] in
-                guard let self else { return }
-                await
-                 accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                await self?.accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
     }
@@ -174,11 +168,9 @@ public final class RsyncProcess {
         process.terminationHandler = { [weak self] task in
             guard let self else { return }
 
-            // Capture remaining output before cleaning up handlers
             let finalOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
             let finalErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
 
-            // Remove handlers to prevent further callbacks
             outputPipe.fileHandleForReading.readabilityHandler = nil
             errorPipe.fileHandleForReading.readabilityHandler = nil
 
@@ -206,18 +198,16 @@ public final class RsyncProcess {
         finalErrorData: Data,
         task: Process
     ) async {
-        // Process any final output data that was still in the pipe
         if let text = String(data: finalOutputData, encoding: .utf8), !text.isEmpty {
             await handleOutputData(text)
         }
 
-        // Flush any remaining partial line
+        // Fix: Flush any remaining partial line that didn't end with a newline character
         if let trailing = await accumulator.flushTrailing() {
             Logger.process.debugMessageOnly("RsyncProcessStreaming: Flushed trailing output: \(trailing)")
             await processOutputLine(trailing)
         }
 
-        // Process any final error data
         if let errorText = String(data: finalErrorData, encoding: .utf8), !errorText.isEmpty {
             await accumulator.recordError(errorText.trimmingCharacters(in: .whitespacesAndNewlines))
         }
@@ -226,16 +216,13 @@ public final class RsyncProcess {
     }
 
     private func handleOutputData(_ text: String) async {
-        // Early exit if cancelled or error occurred
         guard !cancelled, !errorOccurred else { return }
 
         let lines = await accumulator.consume(text)
         guard !lines.isEmpty else { return }
 
         for line in lines {
-            // Recheck state for each line
             if cancelled || errorOccurred { break }
-
             await processOutputLine(line)
         }
     }
@@ -253,7 +240,6 @@ public final class RsyncProcess {
         } catch {
             errorOccurred = true
             Logger.process.debugMessageOnly("RsyncProcessStreaming: Error detected in output - \(error.localizedDescription)")
-
             currentProcess?.terminate()
             handlers.propagateError(error)
         }
@@ -263,7 +249,6 @@ public final class RsyncProcess {
         let output = await accumulator.snapshot()
         let errors = await accumulator.errorSnapshot()
 
-        // Priority 1: Handle cancellation
         if cancelled {
             Logger.process.debugMessageOnly("RsyncProcessStreaming: Terminated due to cancellation")
             handlers.propagateError(RsyncProcessError.processCancelled)
@@ -273,26 +258,17 @@ public final class RsyncProcess {
             return
         }
 
-        // Priority 2: Handle errors detected during output processing
-        // (errorOccurred flag was already set and error was propagated)
-
-        // Priority 3: Handle process failure based on exit code
         if task.terminationStatus != 0, handlers.checkForErrorInRsyncOutput, !errorOccurred {
             let error = RsyncProcessError.processFailed(
                 exitCode: task.terminationStatus,
                 errors: errors
             )
-            Logger.process.debugMessageOnly(
-                "RsyncProcessStreaming: Process failed with exit code \(task.terminationStatus)"
-            )
-
+            Logger.process.debugMessageOnly("RsyncProcessStreaming: Process failed with exit code \(task.terminationStatus)")
             handlers.propagateError(error)
         }
 
-        // Always call termination handler
         handlers.processTermination(output, hiddenID)
         handlers.updateProcess(nil)
-
         cleanupProcess()
     }
 
@@ -305,9 +281,7 @@ public final class RsyncProcess {
             process.terminate()
             Logger.process.debugMessageOnly("RsyncProcessStreaming: Process terminated in deinit")
         }
-
         Logger.process.debugMessageOnly("RsyncProcessStreaming: DEINIT")
     }
 }
-
 // swiftlint:enable line_length
