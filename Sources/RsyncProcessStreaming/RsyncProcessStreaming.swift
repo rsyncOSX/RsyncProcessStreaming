@@ -174,16 +174,21 @@ public final class RsyncProcess {
         process.terminationHandler = { [weak self] task in
             guard let self else { return }
 
-            // Capture remaining output before cleaning up handlers
-            let finalOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-            let finalErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
-
-            // Remove handlers to prevent further callbacks
-            outputPipe.fileHandleForReading.readabilityHandler = nil
-            errorPipe.fileHandleForReading.readabilityHandler = nil
-
             Task { @MainActor [weak self] in
                 guard let self else { return }
+                
+                // Give a brief moment for any in-flight readability handler callbacks to complete
+                // This ensures we don't race with pending data processing
+                try? await Task.sleep(for: .milliseconds(50))
+                
+                // Now capture any remaining output that wasn't processed by readability handlers
+                let finalOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
+                let finalErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
+
+                // Remove handlers to prevent further callbacks
+                outputPipe.fileHandleForReading.readabilityHandler = nil
+                errorPipe.fileHandleForReading.readabilityHandler = nil
+
                 await processFinalOutput(
                     finalOutputData: finalOutputData,
                     finalErrorData: finalErrorData,
