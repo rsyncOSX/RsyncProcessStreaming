@@ -113,9 +113,12 @@ All external behaviors are injected via `ProcessHandlers`:
 public struct ProcessHandlers: @unchecked Sendable {
     let processTermination: ([String]?, Int?) -> Void
     let fileHandler: (Int) -> Void
+    let rsyncPath: String?
     let checkLineForError: (String) throws -> Void
+    let updateProcess: (Process?) -> Void
     let propagateError: (Error) -> Void
-    // ... etc
+    let checkForErrorInRsyncOutput: Bool
+    let environment: [String: String]?
 }
 ```
 
@@ -289,7 +292,12 @@ Logger.process.debugMessageOnly("RsyncProcessStreaming: Process cancelled")
     var terminated = false
     let handlers = ProcessHandlers(
         processTermination: { _, _ in terminated = true },
-        // ... other handlers
+        fileHandler: { _ in },
+        rsyncPath: nil,
+        checkLineForError: { _ in },
+        updateProcess: { _ in },
+        propagateError: { _ in },
+        checkForErrorInRsyncOutput: true
     )
     let process = RsyncProcess(arguments: ["--version"], handlers: handlers)
     try process.executeProcess()
@@ -321,7 +329,12 @@ var capturedOutput: [String]?
 let handlers = ProcessHandlers(
     processTermination: { output, _ in capturedOutput = output },
     fileHandler: { _ in },
-    // ... minimal implementation
+    rsyncPath: nil,
+    checkLineForError: { _ in },
+    updateProcess: { _ in },
+    propagateError: { _ in },
+    checkForErrorInRsyncOutput: false,
+    environment: nil
 )
 ```
 

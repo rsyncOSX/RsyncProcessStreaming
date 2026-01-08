@@ -2,9 +2,19 @@
 import Foundation
 import OSLog
 
+/// Errors that can occur during rsync process execution.
 public enum RsyncProcessError: Error, LocalizedError {
+    /// The rsync executable was not found at the specified path.
     case executableNotFound(String)
+
+    /// The rsync process failed with a non-zero exit code.
+    ///
+    /// - Parameters:
+    ///   - exitCode: The exit code returned by the process
+    ///   - errors: Error messages captured from stderr
     case processFailed(exitCode: Int32, errors: [String])
+
+    /// The process was cancelled by calling `cancel()`.
     case processCancelled
 
     public var errorDescription: String? {
@@ -20,12 +30,27 @@ public enum RsyncProcessError: Error, LocalizedError {
     }
 }
 
+/// Thread-safe accumulator for streaming output and error lines.
+///
+/// This actor manages the accumulation of stdout and stderr data, handling partial lines
+/// and providing thread-safe access to accumulated output. It's designed for efficient
+/// streaming with minimal memory overhead.
+///
+/// The accumulator handles line breaking intelligently, preserving partial lines across
+/// multiple `consume()` calls until a newline is received.
 actor StreamAccumulator {
     private var lines: [String] = []
     private var partialLine: String = ""
     private var errorLines: [String] = []
     private var lineCounter: Int = 0
 
+    /// Consumes text data and returns any complete lines.
+    ///
+    /// Partial lines (text without a trailing newline) are buffered internally
+    /// and combined with the next chunk of data. Empty lines are filtered out.
+    ///
+    /// - Parameter text: Raw text data from stdout
+    /// - Returns: Array of complete, non-empty lines extracted from the text
     func consume(_ text: String) -> [String] {
         let combined = partialLine + text
         let parts = combined.components(separatedBy: .newlines)
@@ -35,6 +60,11 @@ actor StreamAccumulator {
         return Array(newLines)
     }
 
+    /// Flushes any remaining partial line as a complete line.
+    ///
+    /// Call this at the end of processing to capture output that didn't end with a newline.
+    ///
+    /// - Returns: The trailing partial line, or nil if there was none
     func flushTrailing() -> String? {
         guard !partialLine.isEmpty else { return nil }
         let trailing = partialLine
@@ -43,21 +73,31 @@ actor StreamAccumulator {
         return trailing
     }
 
+    /// Returns a snapshot of all accumulated output lines.
     func snapshot() -> [String] { lines }
 
+    /// Records an error message from stderr.
+    ///
+    /// - Parameter text: Error text from stderr
     func recordError(_ text: String) {
         errorLines.append(text)
     }
 
+    /// Returns a snapshot of all accumulated error lines.
     func errorSnapshot() -> [String] { errorLines }
 
+    /// Increments and returns the line counter.
+    ///
+    /// - Returns: The new line count after incrementing
     func incrementLineCounter() -> Int {
         lineCounter += 1
         return lineCounter
     }
 
+    /// Returns the current line count without incrementing.
     func getLineCount() -> Int { lineCounter }
 
+    /// Resets all accumulated state to initial values.
     func reset() {
         lines.removeAll()
         partialLine = ""
@@ -66,6 +106,39 @@ actor StreamAccumulator {
     }
 }
 
+/// MainActor-isolated process manager for executing rsync with real-time output streaming.
+///
+/// `RsyncProcess` orchestrates the execution of rsync commands, streaming stdout and stderr
+/// in real-time through configured handlers. It provides process lifecycle management,
+/// cancellation support, and comprehensive error handling.
+///
+/// The class is MainActor-isolated to safely integrate with UI code while delegating
+/// concurrent output accumulation to an internal actor.
+///
+/// Example usage:
+/// ```swift
+/// let handlers = ProcessHandlers(
+///     processTermination: { output, _ in
+///         print(\"Completed with \\(output?.count ?? 0) lines\")
+///     },
+///     fileHandler: { count in },
+///     rsyncPath: nil,
+///     checkLineForError: { _ in },
+///     updateProcess: { _ in },
+///     propagateError: { error in print(error) },
+///     checkForErrorInRsyncOutput: true
+/// )
+///
+/// let process = RsyncProcess(
+///     arguments: [\"-av\", \"source/\", \"dest/\"],
+///     handlers: handlers
+/// )
+///
+/// try process.executeProcess()
+///
+/// // Later, to cancel:
+/// process.cancel()
+/// ```
 @MainActor
 public final class RsyncProcess {
     private let arguments: [String]
@@ -79,6 +152,13 @@ public final class RsyncProcess {
     private var cancelled = false
     private var errorOccurred = false
 
+    /// Creates a new RsyncProcess instance.
+    ///
+    /// - Parameters:
+    ///   - arguments: Command-line arguments to pass to rsync
+    ///   - hiddenID: Optional identifier passed through to termination handler
+    ///   - handlers: Configuration for all process callbacks and behaviors
+    ///   - useFileHandler: Whether to invoke fileHandler callback for each line (default: false)
     public init(
         arguments: [String],
         hiddenID: Int? = nil,
@@ -91,6 +171,18 @@ public final class RsyncProcess {
         self.useFileHandler = useFileHandler
     }
 
+    /// Executes the rsync process with configured arguments and streams output.
+    ///
+    /// Validates the rsync executable exists, spawns the process, and sets up
+    /// real-time streaming handlers for stdout and stderr. The process runs
+    /// asynchronously with callbacks fired via the configured `ProcessHandlers`.
+    ///
+    /// The method resets internal state, allowing the same instance to be reused
+    /// for multiple executions.
+    ///
+    /// - Throws: `RsyncProcessError.executableNotFound` if rsync is not found at the configured path
+    /// - Note: This method is MainActor-isolated for safe UI integration
+    /// - Important: Call `cancel()` to terminate a running process before deallocation
     public func executeProcess() throws {
         // Reset state for reuse
         cancelled = false
@@ -122,19 +214,28 @@ public final class RsyncProcess {
         logProcessStart(process)
     }
 
-    /// Cancels the running process
+    /// Cancels the running process.
+    ///
+    /// Terminates the process immediately and triggers the termination handler
+    /// with a `RsyncProcessError.processCancelled` error. Safe to call multiple
+    /// times or when no process is running.
     public func cancel() {
         cancelled = true
         currentProcess?.terminate()
         Logger.process.debugMessageOnly("RsyncProcessStreaming: Process cancelled")
     }
 
-    /// Returns whether the process has been cancelled
+    /// Returns whether the process has been cancelled.
+    ///
+    /// This flag is set when `cancel()` is called and remains true until
+    /// the next call to `executeProcess()`.
     public var isCancelledState: Bool {
         cancelled
     }
 
-    /// Returns whether the process is currently running
+    /// Returns whether the process is currently running.
+    ///
+    /// Returns false if no process has been started or if the process has terminated.
     public var isRunning: Bool {
         currentProcess?.isRunning ?? false
     }
