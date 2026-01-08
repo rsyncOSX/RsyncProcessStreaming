@@ -98,9 +98,8 @@ struct RsyncProcessStreamingTests {
             checkLineForError: { _ in },
             updateProcess: { _ in },
             propagateError: { _ in },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
@@ -139,9 +138,8 @@ struct RsyncProcessStreamingTests {
             checkLineForError: { _ in },
             updateProcess: { _ in },
             propagateError: { _ in },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
@@ -180,9 +178,8 @@ struct RsyncProcessStreamingTests {
                     state.errorPropagated = error
                 }
             },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
@@ -251,9 +248,8 @@ struct RsyncProcessStreamingTests {
                     state.errorPropagated = error
                 }
             },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
@@ -293,9 +289,8 @@ struct RsyncProcessStreamingTests {
             checkLineForError: { _ in },
             updateProcess: { _ in },
             propagateError: { _ in },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
@@ -323,9 +318,8 @@ struct RsyncProcessStreamingTests {
             checkLineForError: { _ in },
             updateProcess: { _ in },
             propagateError: { _ in },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
@@ -368,9 +362,8 @@ struct RsyncProcessStreamingTests {
             checkLineForError: { _ in },
             updateProcess: { _ in },
             propagateError: { _ in },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
@@ -417,9 +410,8 @@ struct RsyncProcessStreamingTests {
                 }
             },
             propagateError: { _ in },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
@@ -462,9 +454,8 @@ struct RsyncProcessStreamingTests {
                     state.errorPropagated = error
                 }
             },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
@@ -509,9 +500,8 @@ struct RsyncProcessStreamingTests {
             checkLineForError: { _ in },
             updateProcess: { _ in },
             propagateError: { _ in },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: false,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
@@ -552,9 +542,8 @@ struct RsyncProcessStreamingTests {
                     state.errorPropagated = error
                 }
             },
-            logger: { _, _ in },
             checkForErrorInRsyncOutput: true,
-            rsyncVersion3: true
+            environment: nil
         )
 
         let process = await RsyncProcess(
