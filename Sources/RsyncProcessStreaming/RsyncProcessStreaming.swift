@@ -165,7 +165,7 @@ public final class RsyncProcess {
             Task { @MainActor [weak self] in
                 guard let self else { return }
                 await
-                 accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
+                    accumulator.recordError(text.trimmingCharacters(in: .whitespacesAndNewlines))
             }
         }
     }
@@ -176,11 +176,11 @@ public final class RsyncProcess {
 
             Task { @MainActor [weak self] in
                 guard let self else { return }
-                
+
                 // Give a brief moment for any in-flight readability handler callbacks to complete
                 // This ensures we don't race with pending data processing
                 try? await Task.sleep(for: .milliseconds(50))
-                
+
                 // Now capture any remaining output that wasn't processed by readability handlers
                 let finalOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
                 let finalErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
