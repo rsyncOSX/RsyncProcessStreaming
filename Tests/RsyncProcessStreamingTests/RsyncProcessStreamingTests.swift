@@ -547,7 +547,7 @@ struct RsyncProcessStreamingTests {
         )
 
         let process = await RsyncProcess(
-            arguments: [],
+            arguments: ["--version"],
             handlers: handlers,
             useFileHandler: false
         )

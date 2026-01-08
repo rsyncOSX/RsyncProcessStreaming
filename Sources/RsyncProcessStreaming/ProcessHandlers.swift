@@ -8,7 +8,6 @@
 //
 //  Created by Thomas Evensen on 17/12/2025.
 //
-// swiftlint:disable function_parameter_count
 import Foundation
 
 /// Configuration for process lifecycle callbacks and external behaviors.
@@ -129,5 +128,3 @@ public struct ProcessHandlers: @unchecked Sendable {
         self.environment = environment
     }
 }
-
-// swiftlint:enable function_parameter_count
