@@ -230,7 +230,7 @@ public final class RsyncProcess {
         self.useFileHandler = useFileHandler
         timeoutInterval = timeout
 
-        Logger.process.debugMessageOnly("RsyncProcess initialized with \(arguments.count) arguments")
+        Logger.process.debugMessageOnly("RsyncProcessStreaming initialized with \(arguments.count) arguments")
     }
 
     /// Executes the rsync process with configured arguments and streams output.
@@ -306,7 +306,7 @@ public final class RsyncProcess {
             process.terminate()
         }
 
-        Logger.process.debugMessageOnly("RsyncProcess: Process cancelled")
+        Logger.process.debugMessageOnly("RsyncProcessStreaming:  Process cancelled")
 
         // Immediately propagate cancellation error
         handlers.propagateError(RsyncProcessError.processCancelled)
@@ -419,7 +419,7 @@ public final class RsyncProcess {
     private func handleTimeout() {
         guard !cancelled, !errorOccurred, case .running = state else { return }
 
-        Logger.process.debugMessageOnly("RsyncProcess: Process timed out after \(timeoutInterval ?? 0) seconds")
+        Logger.process.debugMessageOnly("RsyncProcessStreaming:  Process timed out after \(timeoutInterval ?? 0) seconds")
 
         let timeoutError = RsyncProcessError.timeout(timeoutInterval ?? 0)
         state = .failed(timeoutError)
@@ -434,11 +434,11 @@ public final class RsyncProcess {
 
     private func logProcessStart(_ process: Process) {
         guard let path = process.executableURL, let arguments = process.arguments else { return }
-        Logger.process.debugThreadOnly("RsyncProcess: COMMAND - \(path)")
-        Logger.process.debugMessageOnly("RsyncProcess: ARGUMENTS - \(arguments.joined(separator: "\n"))")
+        Logger.process.debugThreadOnly("RsyncProcessStreaming:  COMMAND - \(path)")
+        Logger.process.debugMessageOnly("RsyncProcessStreaming:  ARGUMENTS - \(arguments.joined(separator: "\n"))")
 
         if let timeout = timeoutInterval {
-            Logger.process.debugMessageOnly("RsyncProcess: Timeout set to \(timeout) seconds")
+            Logger.process.debugMessageOnly("RsyncProcessStreaming:  Timeout set to \(timeout) seconds")
         }
     }
 
@@ -460,7 +460,7 @@ public final class RsyncProcess {
 
         // Flush any remaining partial line
         if let trailing = await accumulator.flushTrailing() {
-            Logger.process.debugMessageOnly("RsyncProcess: Flushed trailing output: \(trailing)")
+            Logger.process.debugMessageOnly("RsyncProcessStreaming:  Flushed trailing output: \(trailing)")
             await processOutputLine(trailing)
         }
 
@@ -500,7 +500,7 @@ public final class RsyncProcess {
         } catch {
             errorOccurred = true
             state = .failed(error)
-            Logger.process.debugMessageOnly("RsyncProcess: Error detected in output - \(error.localizedDescription)")
+            Logger.process.debugMessageOnly("RsyncProcessStreaming:  Error detected in output - \(error.localizedDescription)")
 
             currentProcess?.terminate()
             handlers.propagateError(error)
@@ -517,7 +517,7 @@ public final class RsyncProcess {
 
         // Priority 1: Handle cancellation
         if cancelled {
-            Logger.process.debugMessageOnly("RsyncProcess: Terminated due to cancellation")
+            Logger.process.debugMessageOnly("RsyncProcessStreaming:  Terminated due to cancellation")
             state = .terminated(exitCode: task.terminationStatus)
             handlers.processTermination(output, hiddenID)
             handlers.updateProcess(nil)
@@ -535,7 +535,7 @@ public final class RsyncProcess {
             )
             state = .failed(error)
             Logger.process.debugMessageOnly(
-                "RsyncProcess: Process failed with exit code \(task.terminationStatus)"
+                "RsyncProcessStreaming:  Process failed with exit code \(task.terminationStatus)"
             )
 
             handlers.propagateError(error)
@@ -561,6 +561,6 @@ public final class RsyncProcess {
     nonisolated deinit {
         // Note: Best practice is to not start async work in deinit
         // Process cleanup should be handled via explicit cancel() or completion
-        Logger.process.debugMessageOnly("RsyncProcess: DEINIT")
+        Logger.process.debugMessageOnly("RsyncProcessStreaming:  DEINIT")
     }
 }
