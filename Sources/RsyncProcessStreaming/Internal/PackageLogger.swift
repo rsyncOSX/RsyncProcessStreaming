@@ -13,15 +13,15 @@ extension Logger {
         category: "process"
     )
 
-    nonisolated func debugMessageOnly(_ message: String) {
+    nonisolated func debugMessage(_ message: String) {
         #if DEBUG
             debug("\(message)")
         #endif
     }
 
-    nonisolated func debugThreadOnly(_ message: String) {
+    nonisolated func debugWithThreadInfo(_ message: String) {
         #if DEBUG
-            if Thread.checkIsMainThread() {
+            if Thread.isMainThread {
                 debug("\(message) Running on main thread")
             } else {
                 debug("\(message) NOT on main thread, currently on \(Thread.current)")

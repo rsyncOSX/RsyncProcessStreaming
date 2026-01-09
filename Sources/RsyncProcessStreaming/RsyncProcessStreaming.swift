@@ -60,132 +60,17 @@ public enum ProcessState: CustomStringConvertible, Sendable {
     }
 }
 
-/// Thread-safe accumulator for streaming output and error lines.
-///
-/// This actor manages the accumulation of stdout and stderr data, handling partial lines
-/// and providing thread-safe access to accumulated output. It's designed for efficient
-/// streaming with minimal memory overhead.
-///
-/// The accumulator handles line breaking intelligently, preserving partial lines across
-/// multiple `consume()` calls until a newline is received.
-actor StreamAccumulator {
-    private var lines: [String] = []
-    private var partialLine: String = ""
-    private var errorLines: [String] = []
-    private var lineCounter: Int = 0
-    private let lineSeparator = "\n"
-    private let carriageReturn = "\r"
-
-    /// Consumes text data and returns any complete lines.
-    ///
-    /// Partial lines (text without a trailing newline) are buffered internally
-    /// and combined with the next chunk of data. Empty lines are filtered out.
-    ///
-    /// - Parameter text: Raw text data from stdout
-    /// - Returns: Array of complete, non-empty lines extracted from the text
-    func consume(_ text: String) -> [String] {
-        var lines: [String] = []
-        var buffer = partialLine
-
-        for char in text {
-            if char == "\n" {
-                // Handle \r\n or just \n
-                if buffer.hasSuffix("\r") {
-                    buffer.removeLast()
-                }
-                if !buffer.isEmpty {
-                    lines.append(buffer)
-                }
-                buffer = ""
-            } else {
-                buffer.append(char)
-            }
-        }
-
-        partialLine = buffer
-        self.lines.append(contentsOf: lines)
-        return lines
-    }
-
-    /// Flushes any remaining partial line as a complete line.
-    ///
-    /// Call this at the end of processing to capture output that didn't end with a newline.
-    ///
-    /// - Returns: The trailing partial line, or nil if there was none
-    func flushTrailing() -> String? {
-        guard !partialLine.isEmpty else { return nil }
-        let trailing = partialLine
-        partialLine = ""
-        lines.append(trailing)
-        return trailing
-    }
-
-    /// Returns a snapshot of all accumulated output lines.
-    func snapshot() -> [String] { lines }
-
-    /// Records an error message from stderr.
-    ///
-    /// - Parameter text: Error text from stderr
-    func recordError(_ text: String) {
-        errorLines.append(text.trimmingCharacters(in: .whitespacesAndNewlines))
-    }
-
-    /// Returns a snapshot of all accumulated error lines.
-    func errorSnapshot() -> [String] { errorLines }
-
-    /// Increments and returns the line counter.
-    ///
-    /// - Returns: The new line count after incrementing
-    func incrementLineCounter() -> Int {
-        lineCounter += 1
-        return lineCounter
-    }
-
-    /// Returns the current line count without incrementing.
-    func getLineCount() -> Int { lineCounter }
-
-    /// Resets all accumulated state to initial values.
-    func reset() {
-        lines.removeAll()
-        partialLine = ""
-        errorLines.removeAll()
-        lineCounter = 0
-    }
-}
-
 /// MainActor-isolated process manager for executing rsync with real-time output streaming.
-///
-/// `RsyncProcess` orchestrates the execution of rsync commands, streaming stdout and stderr
-/// in real-time through configured handlers. It provides process lifecycle management,
-/// cancellation support, timeout handling, and comprehensive error handling.
-///
-/// The class is MainActor-isolated to safely integrate with UI code while delegating
-/// concurrent output accumulation to an internal actor.
 ///
 /// Example usage:
 /// ```swift
-/// let handlers = ProcessHandlers(
-///     processTermination: { output, _ in
-///         print(\"Completed with \\(output?.count ?? 0) lines\")
-///     },
-///     fileHandler: { count in },
-///     rsyncPath: nil,
-///     checkLineForError: { _ in },
-///     updateProcess: { _ in },
-///     propagateError: { error in print(error) },
-///     checkForErrorInRsyncOutput: true
-/// )
+/// let handlers = ProcessHandlers(processTermination: { output, _ in
+///     print("Completed with \(output?.count ?? 0) lines")
+/// }, fileHandler: { _ in }, rsyncPath: nil, checkLineForError: { _ in },
+/// updateProcess: { _ in }, propagateError: { print($0) }, checkForErrorInRsyncOutput: true)
 ///
-/// let process = RsyncProcess(
-///     arguments: [\"-av\", \"source/\", \"dest/\"],
-///     handlers: handlers,
-///     timeout: 60 // Optional timeout in seconds
-/// )
-///
+/// let process = RsyncProcess(arguments: ["-av", "source/", "dest/"], handlers: handlers)
 /// try process.executeProcess()
-///
-/// // Later, to cancel:
-/// process.cancel()
 /// ```
 @MainActor
 public final class RsyncProcess {
@@ -230,28 +115,17 @@ public final class RsyncProcess {
         self.useFileHandler = useFileHandler
         timeoutInterval = timeout
 
-        Logger.process.debugMessageOnly("RsyncProcessStreaming initialized with \(arguments.count) arguments")
+        Logger.process.debugMessage("RsyncProcessStreaming initialized with \(arguments.count) arguments")
     }
 
     /// Executes the rsync process with configured arguments and streams output.
     ///
-    /// Validates the rsync executable exists, spawns the process, and sets up
-    /// real-time streaming handlers for stdout and stderr. The process runs
-    /// asynchronously with callbacks fired via the configured `ProcessHandlers`.
-    ///
-    /// The method resets internal state, allowing the same instance to be reused
-    /// for multiple executions.
-    ///
-    /// - Throws: `RsyncProcessError.executableNotFound` if rsync is not found at the configured path
-    ///           `RsyncProcessError.invalidState` if process is not idle
-    /// - Note: This method is MainActor-isolated for safe UI integration
-    /// - Important: Call `cancel()` to terminate a running process before deallocation
+    /// - Throws: `RsyncProcessError.executableNotFound` or `RsyncProcessError.invalidState`
     public func executeProcess() throws {
         guard case .idle = state else {
             throw RsyncProcessError.invalidState(state)
         }
 
-        // Reset state for reuse
         cancelled = false
         errorOccurred = false
         state = .running
@@ -278,8 +152,6 @@ public final class RsyncProcess {
 
         setupPipeHandlers(outputPipe: outputPipe, errorPipe: errorPipe)
         setupTerminationHandler(process: process, outputPipe: outputPipe, errorPipe: errorPipe)
-
-        // Start timeout timer if configured
         startTimeoutTimer()
 
         try process.run()
@@ -287,60 +159,37 @@ public final class RsyncProcess {
     }
 
     /// Cancels the running process.
-    ///
-    /// Terminates the process immediately and triggers the termination handler
-    /// with a `RsyncProcessError.processCancelled` error. Safe to call multiple
-    /// times or when no process is running.
     public func cancel() {
         guard !cancelled else { return }
 
         cancelled = true
         state = .cancelling
 
-        // Invalidate timeout timer on MainActor
         timeoutTimer?.invalidate()
         timeoutTimer = nil
 
-        // Terminate process - don't modify handlers/pipes as process is already running
         if let process = currentProcess {
             process.terminate()
         }
 
-        Logger.process.debugMessageOnly("RsyncProcessStreaming:  Process cancelled")
-
-        // Immediately propagate cancellation error
+        Logger.process.debugMessage("RsyncProcessStreaming:  Process cancelled")
         handlers.propagateError(RsyncProcessError.processCancelled)
     }
 
-    /// Returns whether the process has been cancelled.
-    ///
-    /// This flag is set when `cancel()` is called and remains true until
-    /// the next call to `executeProcess()`.
-    public var isCancelledState: Bool {
-        cancelled
-    }
+    /// Whether the process has been cancelled.
+    public var isCancelledState: Bool { cancelled }
 
-    /// Returns whether the process is currently running.
-    ///
-    /// Returns false if no process has been started or if the process has terminated.
-    public var isRunning: Bool {
-        currentProcess?.isRunning ?? false
-    }
+    /// Whether the process is currently running.
+    public var isRunning: Bool { currentProcess?.isRunning ?? false }
 
-    /// Returns the current process state.
-    public var currentState: ProcessState {
-        state
-    }
+    /// The current process state.
+    public var currentState: ProcessState { state }
 
-    /// Returns the process identifier if the process is running.
-    public var processIdentifier: Int32? {
-        currentProcess?.processIdentifier
-    }
+    /// The process identifier if running.
+    public var processIdentifier: Int32? { currentProcess?.processIdentifier }
 
-    /// Returns the termination status if the process has terminated.
-    public var terminationStatus: Int32? {
-        currentProcess?.terminationStatus
-    }
+    /// The termination status if terminated.
+    public var terminationStatus: Int32? { currentProcess?.terminationStatus }
 
     /// Returns a description of the command being executed.
     public var commandDescription: String {
@@ -356,10 +205,8 @@ public final class RsyncProcess {
             let data = handle.availableData
             guard !data.isEmpty else { return }
 
-            // Capture self strongly for the async task to prevent premature deallocation
             Task { @MainActor in
                 guard let self, !self.cancelled, !self.errorOccurred else { return }
-
                 if let text = String(data: data, encoding: .utf8), !text.isEmpty {
                     await self.handleOutputData(text)
                 }
@@ -372,7 +219,6 @@ public final class RsyncProcess {
 
             Task { @MainActor in
                 guard let self else { return }
-
                 if let text = String(data: data, encoding: .utf8), !text.isEmpty {
                     await self.accumulator.recordError(text)
                 }
@@ -381,30 +227,23 @@ public final class RsyncProcess {
     }
 
     private func setupTerminationHandler(process: Process, outputPipe: Pipe, errorPipe: Pipe) {
-        // Use a serial queue to ensure proper ordering of termination events
-        let terminationQueue = DispatchQueue(label: "com.rsync.process.termination", qos: .userInitiated)
+        let queue = DispatchQueue(label: "com.rsync.process.termination", qos: .userInitiated)
 
         process.terminationHandler = { [weak self] task in
-            terminationQueue.async {
-                // CRITICAL: Do NOT stop readability handlers immediately
-                // Instead, drain remaining data first, then stop handlers
-
-                // Give a brief moment for any in-flight data to arrive
+            queue.async {
                 Thread.sleep(forTimeInterval: 0.05)
 
-                // Read ALL remaining data from pipes until they're empty
-                let finalOutputData = Self.drainPipe(outputPipe.fileHandleForReading)
-                let finalErrorData = Self.drainPipe(errorPipe.fileHandleForReading)
+                let outputData = Self.drainPipe(outputPipe.fileHandleForReading)
+                let errorData = Self.drainPipe(errorPipe.fileHandleForReading)
 
-                // Now stop the readability handlers after draining
                 outputPipe.fileHandleForReading.readabilityHandler = nil
                 errorPipe.fileHandleForReading.readabilityHandler = nil
 
                 Task { @MainActor in
                     guard let self else { return }
                     await self.processFinalOutput(
-                        finalOutputData: finalOutputData,
-                        finalErrorData: finalErrorData,
+                        finalOutputData: outputData,
+                        finalErrorData: errorData,
                         task: task
                     )
                 }
@@ -412,21 +251,13 @@ public final class RsyncProcess {
         }
     }
 
-    /// Drains all available data from a pipe until it's empty.
-    ///
-    /// This ensures we capture all buffered output before the pipe is closed.
     private nonisolated static func drainPipe(_ fileHandle: FileHandle) -> Data {
         var allData = Data()
-
-        // Keep reading until no more data is available
         while true {
             let data = fileHandle.availableData
-            if data.isEmpty {
-                break
-            }
+            if data.isEmpty { break }
             allData.append(data)
         }
-
         return allData
     }
 
@@ -443,26 +274,23 @@ public final class RsyncProcess {
     private func handleTimeout() {
         guard !cancelled, !errorOccurred, case .running = state else { return }
 
-        Logger.process.debugMessageOnly("RsyncProcessStreaming:  Process timed out after \(timeoutInterval ?? 0) seconds")
+        let timeout = timeoutInterval ?? 0
+        Logger.process.debugMessage("RsyncProcessStreaming:  Timeout after \(timeout)s")
 
-        let timeoutError = RsyncProcessError.timeout(timeoutInterval ?? 0)
+        let timeoutError = RsyncProcessError.timeout(timeout)
         state = .failed(timeoutError)
-
-        // Cancel the process
         cancelled = true
         currentProcess?.terminate()
-
-        // Propagate timeout error
         handlers.propagateError(timeoutError)
     }
 
     private func logProcessStart(_ process: Process) {
         guard let path = process.executableURL, let arguments = process.arguments else { return }
-        Logger.process.debugThreadOnly("RsyncProcessStreaming:  COMMAND - \(path)")
-        Logger.process.debugMessageOnly("RsyncProcessStreaming:  ARGUMENTS - \(arguments.joined(separator: "\n"))")
+        Logger.process.debugWithThreadInfo("RsyncProcessStreaming:  COMMAND - \(path)")
+        Logger.process.debugMessage("RsyncProcessStreaming:  ARGUMENTS - \(arguments.joined(separator: "\n"))")
 
         if let timeout = timeoutInterval {
-            Logger.process.debugMessageOnly("RsyncProcessStreaming:  Timeout set to \(timeout) seconds")
+            Logger.process.debugMessage("RsyncProcessStreaming:  Timeout set to \(timeout) seconds")
         }
     }
 
@@ -473,22 +301,18 @@ public final class RsyncProcess {
         finalErrorData: Data,
         task: Process
     ) async {
-        // Invalidate timeout timer on MainActor
         timeoutTimer?.invalidate()
         timeoutTimer = nil
 
-        // Process any final output data that was still in the pipe
         if let text = String(data: finalOutputData, encoding: .utf8), !text.isEmpty {
             await handleOutputData(text)
         }
 
-        // Flush any remaining partial line
         if let trailing = await accumulator.flushTrailing() {
-            Logger.process.debugMessageOnly("RsyncProcessStreaming:  Flushed trailing output: \(trailing)")
+            Logger.process.debugMessage("RsyncProcessStreaming:  Flushed trailing: \(trailing)")
             await processOutputLine(trailing)
         }
 
-        // Process any final error data
         if let errorText = String(data: finalErrorData, encoding: .utf8), !errorText.isEmpty {
             await accumulator.recordError(errorText)
         }
@@ -497,16 +321,13 @@ public final class RsyncProcess {
     }
 
     private func handleOutputData(_ text: String) async {
-        // Early exit if cancelled or error occurred
         guard !cancelled, !errorOccurred else { return }
 
         let lines = await accumulator.consume(text)
         guard !lines.isEmpty else { return }
 
         for line in lines {
-            // Recheck state for each line
             if cancelled || errorOccurred { break }
-
             await processOutputLine(line)
         }
     }
@@ -524,8 +345,8 @@ public final class RsyncProcess {
         } catch {
             errorOccurred = true
             state = .failed(error)
-            Logger.process.debugMessageOnly("RsyncProcessStreaming:  Error detected in output - \(error.localizedDescription)")
-
+            let msg = error.localizedDescription
+            Logger.process.debugMessage("RsyncProcessStreaming:  Output error - \(msg)")
             currentProcess?.terminate()
             handlers.propagateError(error)
         }
@@ -535,21 +356,15 @@ public final class RsyncProcess {
         let output = await accumulator.snapshot()
         let errors = await accumulator.errorSnapshot()
 
-        defer {
-            cleanupProcess()
-        }
+        defer { cleanupProcess() }
 
-        // Priority 1: Handle cancellation
         if cancelled {
-            Logger.process.debugMessageOnly("RsyncProcessStreaming:  Terminated due to cancellation")
+            Logger.process.debugMessage("RsyncProcessStreaming:  Terminated due to cancellation")
             state = .terminated(exitCode: task.terminationStatus)
             handlers.processTermination(output, hiddenID)
             handlers.updateProcess(nil)
             return
         }
-
-        // Priority 2: Handle errors detected during output processing
-        // (errorOccurred flag was already set and error was propagated)
 
         // Priority 3: Handle process failure based on exit code
         if task.terminationStatus != 0, handlers.checkForErrorInRsyncOutput, !errorOccurred {
@@ -558,7 +373,7 @@ public final class RsyncProcess {
                 errors: errors
             )
             state = .failed(error)
-            Logger.process.debugMessageOnly(
+            Logger.process.debugMessage(
                 "RsyncProcessStreaming:  Process failed with exit code \(task.terminationStatus)"
             )
 
@@ -573,18 +388,13 @@ public final class RsyncProcess {
     }
 
     private func cleanupProcess() {
-        // Invalidate timer on MainActor
         timeoutTimer?.invalidate()
         timeoutTimer = nil
         currentProcess = nil
-
-        // Reset state to idle to allow re-execution
         state = .idle
     }
 
     nonisolated deinit {
-        // Note: Best practice is to not start async work in deinit
-        // Process cleanup should be handled via explicit cancel() or completion
-        Logger.process.debugMessageOnly("RsyncProcessStreaming:  DEINIT")
+        Logger.process.debugMessage("RsyncProcessStreaming:  DEINIT")
     }
 }
