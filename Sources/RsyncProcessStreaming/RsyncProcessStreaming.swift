@@ -386,13 +386,19 @@ public final class RsyncProcess {
 
         process.terminationHandler = { [weak self] task in
             terminationQueue.async {
-                // Ensure readability handlers are stopped first
+                // CRITICAL: Do NOT stop readability handlers immediately
+                // Instead, drain remaining data first, then stop handlers
+
+                // Give a brief moment for any in-flight data to arrive
+                Thread.sleep(forTimeInterval: 0.05)
+
+                // Read ALL remaining data from pipes until they're empty
+                let finalOutputData = Self.drainPipe(outputPipe.fileHandleForReading)
+                let finalErrorData = Self.drainPipe(errorPipe.fileHandleForReading)
+
+                // Now stop the readability handlers after draining
                 outputPipe.fileHandleForReading.readabilityHandler = nil
                 errorPipe.fileHandleForReading.readabilityHandler = nil
-
-                // Read remaining data synchronously
-                let finalOutputData = outputPipe.fileHandleForReading.readDataToEndOfFile()
-                let finalErrorData = errorPipe.fileHandleForReading.readDataToEndOfFile()
 
                 Task { @MainActor in
                     guard let self else { return }
@@ -404,6 +410,24 @@ public final class RsyncProcess {
                 }
             }
         }
+    }
+
+    /// Drains all available data from a pipe until it's empty.
+    ///
+    /// This ensures we capture all buffered output before the pipe is closed.
+    private nonisolated static func drainPipe(_ fileHandle: FileHandle) -> Data {
+        var allData = Data()
+
+        // Keep reading until no more data is available
+        while true {
+            let data = fileHandle.availableData
+            if data.isEmpty {
+                break
+            }
+            allData.append(data)
+        }
+
+        return allData
     }
 
     private func startTimeoutTimer() {
