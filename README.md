@@ -127,6 +127,69 @@ Task { @MainActor in
 5. **Termination**: Final buffers flush, `processTermination` fires with accumulated stdout and optional hidden ID, and `updateProcess(nil)` clears state.
 6. **Cancellation**: `cancel()` stops the underlying process and propagates `processCancelled` to consumers.
 
+## Process Termination and Output Draining
+
+The package employs a multi-stage termination strategy to ensure all process output is captured before cleanup:
+
+### Thread Architecture
+When the `Process` terminates, the `terminationHandler` is called on an arbitrary system thread. Rather than processing directly on this thread, the handler immediately dispatches to a dedicated background queue:
+
+```swift
+let queue = DispatchQueue(label: "com.rsync.process.termination", qos: .userInitiated)
+```
+
+This custom queue with `.userInitiated` QoS priority:
+- Provides a controlled, serial execution context for cleanup operations
+- Keeps blocking I/O operations off the main thread
+- Ensures prompt processing of termination without interfering with UI responsiveness
+- Makes debugging easier with a labeled queue visible in Instruments
+
+### Output Draining Sequence
+The termination handler follows this precise sequence to guarantee complete output capture:
+
+1. **Brief delay (50ms)**: Allows OS-level pipe buffers to flush any remaining data after process termination
+   ```swift
+   Thread.sleep(forTimeInterval: 0.05)
+   ```
+
+2. **Synchronous pipe draining**: Exhaustively reads all remaining data from both stdout and stderr pipes
+   ```swift
+   let outputData = Self.drainPipe(outputPipe.fileHandleForReading)
+   let errorData = Self.drainPipe(errorPipe.fileHandleForReading)
+   ```
+   The `drainPipe` method loops until no data remains:
+   ```swift
+   while true {
+       let data = fileHandle.availableData
+       if data.isEmpty { break }
+       allData.append(data)
+   }
+   ```
+
+3. **Handler cleanup**: Only after draining completes are the readability handlers cleared to prevent concurrent access
+   ```swift
+   outputPipe.fileHandleForReading.readabilityHandler = nil
+   errorPipe.fileHandleForReading.readabilityHandler = nil
+   ```
+
+4. **MainActor transition**: All captured data is then passed to `@MainActor`-isolated methods for final processing
+   ```swift
+   Task { @MainActor in
+       await self.processFinalOutput(...)
+   }
+   ```
+
+5. **Final processing**: The accumulated output is processed, trailing partial lines are flushed, and termination callbacks fire
+
+6. **Deferred cleanup**: A `defer` block ensures resources (timers, process references) are released only after all termination logic completes
+
+### Why This Approach?
+- **No data loss**: The sleep + exhaustive draining pattern ensures even late-arriving pipe data is captured
+- **Thread safety**: Background draining prevents blocking the main thread, then safely transitions to MainActor for state updates
+- **Race prevention**: Clearing handlers only after draining prevents concurrent read attempts
+- **Predictable ordering**: Serial queue execution ensures cleanup steps happen in the correct sequence
+- **Resource safety**: Deferred cleanup guarantees proper resource release even if early returns or errors occur
+
 ## Error Model
 - **`executableNotFound`**: rsync path fails executability check.
 - **`processFailed`**: Non-zero exit combined with collected stderr when `checkForErrorInRsyncOutput` is enabled.
